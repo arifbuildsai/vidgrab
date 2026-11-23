@@ -1,6 +1,6 @@
 {
   "name": "vidgrab-desktop",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "VidGrab — a minimal YouTube downloader desktop app. One link field, one button; H.264 + AAC MP4 that opens in QuickTime.",
   "main": "src/main.js",

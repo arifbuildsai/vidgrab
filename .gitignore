@@ -18,3 +18,5 @@ Thumbs.db
 .vscode/
 .idea/
 .env
+# byproducts the verification harness writes beside itself
+tools/verify/shot-*.png

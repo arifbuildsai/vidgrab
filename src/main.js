@@ -145,17 +145,76 @@ function caBundle() {
   return null;
 }
 
-function pythonCandidates() {
-  const dirs = (process.env.PATH || '').split(path.delimiter).filter(Boolean);
-  /* Homebrew and /usr/local first: /usr/bin/python3 is Apple's stale 3.9, which
-     yt-dlp rejects. */
-  const fixed = ['/opt/homebrew/bin/python3', '/usr/local/bin/python3', '/usr/bin/python3'];
+/* GNU tar lives at /usr/bin/tar on macOS and most Linux distros. Windows 10+
+   ships bsdtar on PATH as tar.exe and has no /usr/bin at all, so the hardcoded
+   path made engine setup fail outright there. */
+function tarBin() {
+  if (process.platform === 'win32') return 'tar';
+  return fs.existsSync('/usr/bin/tar') ? '/usr/bin/tar' : 'tar';
+}
+
+/* The release tarball wraps everything in one top-level folder. Dropping
+   --strip-components and descending here instead of relying on that flag: GNU
+   tar understands it, bsdtar on Windows does not, so the flat extract plus this
+   lookup behaves the same on all three platforms. */
+function engineRoot(staging) {
+  if (srcEngineIsSane(staging)) return staging;
+  let kids = [];
+  try { kids = fs.readdirSync(staging, { withFileTypes: true }); } catch (_) { return null; }
+  const dirs = kids.filter((k) => k.isDirectory());
+  if (dirs.length !== 1) return null;
+  const inner = path.join(staging, dirs[0].name);
+  return srcEngineIsSane(inner) ? inner : null;
+}
+
+/* Every directory a real Python install might hide behind on Windows. */
+function winPythonRoots() {
   const out = [];
-  for (const p of fixed.concat(dirs.map((d) => path.join(d, 'python3')))) {
-    if (!path.isAbsolute(p) || out.indexOf(p) !== -1) continue;
-    try { fs.accessSync(p, fs.constants.X_OK); } catch (_) { continue; }
-    out.push(p);
+  const local = process.env.LOCALAPPDATA;
+  const pf = process.env.ProgramFiles || 'C:\\Program Files';
+  const pf86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+  if (local) out.push(path.join(local, 'Programs', 'Python'));
+  out.push(pf, pf86, 'C:\\');
+  out.push(path.join(os.homedir(), 'scoop', 'apps', 'python'));
+  return out;
+}
+
+function pythonCandidates() {
+  const win = process.platform === 'win32';
+  const dirs = (process.env.PATH || '').split(path.delimiter).filter(Boolean);
+  const exe = win ? 'python.exe' : 'python3';
+  const out = [];
+
+  const add = (p) => {
+    if (!p || !path.isAbsolute(p) || out.indexOf(p) !== -1) return;
+    try {
+      const st = fs.statSync(p);
+      /* On Windows X_OK says little about a real executable; insist on a file.
+         The Microsoft Store leaves a zero-byte python3 alias on PATH that only
+         opens the Store, and it is filtered out here as well as by the probe. */
+      if (st.isFile() && (!win || /\.exe$/i.test(p))) out.push(p);
+    } catch (_) {}
+  };
+
+  if (win) {
+    /* The `py` launcher is the most dependable sign of a Windows install. */
+    if (process.env.SystemRoot) add(path.join(process.env.SystemRoot, 'py.exe'));
+    add(path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Launcher', 'py.exe'));
+    for (const parent of winPythonRoots()) {
+      let kids = [];
+      try { kids = fs.readdirSync(parent, { withFileTypes: true }); } catch (_) { continue; }
+      for (const k of kids) {
+        if (!k.isDirectory() || !/python/i.test(k.name)) continue;
+        add(path.join(parent, k.name, exe));
+        add(path.join(parent, k.name, 'python3.exe'));
+      }
+    }
+  } else {
+    /* Homebrew and /usr/local first: /usr/bin/python3 is Apple's stale 3.9,
+       which yt-dlp rejects. */
+    for (const p of ['/opt/homebrew/bin/python3', '/usr/local/bin/python3', '/usr/bin/python3']) add(p);
   }
+  for (const d of dirs) add(path.join(d, exe));
   return out;
 }
 
@@ -281,15 +340,17 @@ async function fetchSrcEngine(dir) {
   const staging = dir + '.new';
   fs.rmSync(staging, { recursive: true, force: true });
   fs.mkdirSync(staging, { recursive: true });
-  const x = spawnSync('/usr/bin/tar', ['-xzf', tmp, '-C', staging, '--strip-components', '1'],
+  const x = spawnSync(tarBin(), ['-xzf', tmp, '-C', staging],
     { windowsHide: true, stdio: 'ignore' });
   try { fs.unlinkSync(tmp); } catch (_) {}
-  if (x.status !== 0 || !srcEngineIsSane(staging)) {
+  const root = engineRoot(staging);
+  if (x.status !== 0 || !root) {
     fs.rmSync(staging, { recursive: true, force: true });
     throw new Error('The download engine came through damaged. Please try again.');
   }
   fs.rmSync(dir, { recursive: true, force: true });
-  fs.renameSync(staging, dir);
+  fs.renameSync(root, dir);
+  fs.rmSync(staging, { recursive: true, force: true });
   send('vg:engine', { pct: 100, bytes: written, total: written });
   return dir;
 }
@@ -426,8 +487,19 @@ async function fetchEngine() {
 function findFfmpeg() {
   if (ffmpegCache !== undefined) return ffmpegCache;
   const dirs = (process.env.PATH || '').split(path.delimiter).filter(Boolean);
-  dirs.push('/opt/homebrew/bin', '/usr/local/bin', path.join(os.homedir(), '.local', 'bin'),
-            path.join(app.getPath('userData'), 'bin'));
+  if (process.platform === 'win32') {
+    /* The usual ways ffmpeg arrives on Windows: a manual C:\ffmpeg build, the
+       winget and Chocolatey shims, and scoop's shims folder. */
+    const pf = process.env.ProgramFiles || 'C:\\Program Files';
+    const pf86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+    dirs.push('C:\\ffmpeg\\bin', path.join(pf, 'ffmpeg', 'bin'), path.join(pf86, 'ffmpeg', 'bin'),
+      path.join(process.env.LOCALAPPDATA || '', 'Microsoft', 'WinGet', 'Links'),
+      'C:\\ProgramData\\chocolatey\\bin',
+      path.join(os.homedir(), 'scoop', 'shims'));
+  } else {
+    dirs.push('/opt/homebrew/bin', '/usr/local/bin', path.join(os.homedir(), '.local', 'bin'));
+  }
+  dirs.push(path.join(app.getPath('userData'), 'bin'));
   const names = process.platform === 'win32' ? ['ffmpeg.exe'] : ['ffmpeg'];
   let found = null;
   for (const dir of dirs) {
@@ -1218,20 +1290,89 @@ async function fetchStream(stream, dest, myJob, onBytes) {
     }
   }
 }
+/* Where the bundled tone lives. In a packaged app it sits OUTSIDE the asar,
+   because afplay, paplay and SoundPlayer are separate programs and cannot read
+   a path inside app.asar — which is why the WAV is an extraResource rather than
+   a file under ui/. In a dev run it is beside src/. */
+function chimeFile() {
+  const cands = app.isPackaged
+    ? [path.join(process.resourcesPath, 'chime.wav'),
+       path.join(process.resourcesPath, 'assets', 'chime.wav')]
+    : [path.join(__dirname, '..', 'assets', 'chime.wav')];
+  for (const p of cands) {
+    try { if (fs.statSync(p).isFile()) return p; } catch (_) {}
+  }
+  return null;
+}
+
+function onPath(bin) {
+  const dirs = (process.env.PATH || '').split(path.delimiter).filter(Boolean);
+  const names = process.platform === 'win32' ? [bin + '.exe', bin + '.com', bin + '.bat'] : [bin];
+  for (const d of dirs) {
+    for (const n of names) {
+      try { if (fs.statSync(path.join(d, n)).isFile()) return true; } catch (_) {}
+    }
+  }
+  return false;
+}
+
+function playDetached(file, args) {
+  try {
+    const p = spawn(file, args, { detached: true, stdio: 'ignore', windowsHide: true });
+    p.on('error', () => { try { shell.beep(); } catch (_) {} });
+    p.unref();
+    return true;
+  } catch (_) { return false; }
+}
+
+/* PowerShell's -EncodedCommand takes the script as base64 UTF-16LE. Passing the
+   WAV that way instead of interpolating it into a quoted command line means a
+   path holding a space, an apostrophe or a $ cannot break the command or inject
+   into it. Single quotes are PowerShell's literal-string form. */
+function psLiteral(s) {
+  return "'" + String(s).replace(/'/g, "''") + "'";
+}
+
 /* The finish chime. Deliberately played from the main process: a backgrounded
    window throttles its renderer, so a page-side sound arrives late or not at
-   all — the one moment the user asked for it. macOS ships a small set of
-   system sounds; Glass is short, bright and impossible to mistake for an
-   error tone. Anywhere else, fall back to the OS beep. Fire-and-forget: the
-   download is already saved, and nothing here may hold up the panel. */
+   all — the one moment the user asked for it. macOS plays its own Glass, which
+   is short, bright and impossible to mistake for an error tone; Windows and
+   Linux play the bundled WAV through whichever audio player the machine
+   actually has, and only when no player exists at all does it fall back to the
+   OS beep. Fire-and-forget: the download is already saved, and nothing here may
+   hold up the panel. */
 function ding() {
+  const wav = chimeFile();
+
   if (process.platform === 'darwin') {
-    try {
-      const p = spawn('/usr/bin/afplay', ['/System/Library/Sounds/Glass.aiff'], { detached: true, stdio: 'ignore' });
-      p.on('error', () => { try { shell.beep(); } catch (_) {} });
-      p.unref();
-      return;
-    } catch (_) {}
+    const glass = '/System/Library/Sounds/Glass.aiff';
+    const f = fs.existsSync(glass) ? glass : wav;
+    if (f && playDetached('/usr/bin/afplay', [f])) return;
+  } else if (process.platform === 'win32') {
+    if (wav) {
+      const sys = process.env.SystemRoot || 'C:\\Windows';
+      const ps = path.join(sys, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+      if (fs.existsSync(ps)) {
+        const script = '$ErrorActionPreference="Stop";'
+          + 'Add-Type -AssemblyName System;'
+          + '$p = New-Object System.Media.SoundPlayer ' + psLiteral(wav) + ';'
+          + '$p.PlaySync()';
+        const b64 = Buffer.from(script, 'utf16le').toString('base64');
+        if (playDetached(ps, ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden',
+          '-EncodedCommand', b64])) return;
+      }
+    }
+  } else {
+    /* One WAV, several plausible players: PulseAudio, PipeWire, plain ALSA, the
+       freedesktop event-sound helper, and sox. Each is tried only if it is on
+       PATH, so no player is spawned that cannot exist. */
+    const players = [['paplay', [wav]], ['pw-play', [wav]], ['aplay', ['-q', wav]],
+      ['canberra-gtk-play', ['-f', wav]], ['play', ['-q', wav]]];
+    if (wav) {
+      for (const [bin, args] of players) {
+        if (onPath(bin) && playDetached(bin, args)) return;
+      }
+    }
   }
   try { shell.beep(); } catch (_) {}
 }
@@ -1264,12 +1405,20 @@ function runFFmpeg(binPath, args, myJob) {
 
 /* Mirror yt-dlp's own naming closely enough that alreadySaved() recognizes
    both paths: it matches on "[id] suffix.ext", independent of the title. */
+/* Windows treats these as devices, not filenames, and refuses them even with an
+   extension appended. Case-insensitive, and COM0/LPT0 are not reserved. */
+const WIN_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+
 function safeName(title, videoId, suffix) {
-  const t = String(title || 'video')
+  let t = String(title || 'video')
     .replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 80);
+  /* Windows also rejects a component that ends in a dot or a space — the case
+     that bites when a title finishes with "..." or a trailing blank. */
+  t = t.replace(/[. ]+$/, '');
+  if (WIN_RESERVED.test(t)) t = '_' + t;
   return (t || 'video') + ' [' + (videoId || 'unknown') + ']' + suffix;
 }
 

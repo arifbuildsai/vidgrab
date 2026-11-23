@@ -1,6 +1,6 @@
 appId: net.vidgrab.desktop
 productName: VidGrab
-copyright: © 2026 VidGrab
+copyright: © 2026 Arif Shah
 directories:
   output: release
 files:
@@ -8,11 +8,17 @@ files:
   - ui/**
   - build/icon.png
   - package.json
+/* The chime is played by afplay, paplay and PowerShell — separate programs that
+   cannot read inside app.asar — so it ships beside the asar, not inside it. */
+extraResources:
+  - from: assets/chime.wav
+    to: chime.wav
 asar: true
 compression: normal
 mac:
   category: public.app-category.utilities
   icon: build/icon.icns
+  minimumSystemVersion: '11.0'
   target:
     - target: dmg
       arch: [arm64, x64]
@@ -23,18 +29,26 @@ win:
   icon: build/icon.png
   target:
     - target: nsis
-      arch: [x64]
-  artifactName: VidGrab-Setup-${version}-${os}.${ext}
+      arch: [x64, arm64]
+  artifactName: VidGrab-Setup-${version}-${arch}-${os}.${ext}
 nsis:
   oneClick: true
   perMachine: false
   createDesktopShortcut: true
+  allowToChangeInstallationDirectory: false
+  installerLanguages: en_US
 linux:
   icon: build/icon.png
+  category: Utility
+  executableName: vidgrab
+  synopsis: Save YouTube videos to your computer
+  description: VidGrab is a minimal YouTube downloader. Paste a link, pick a quality that really exists for that video, and get an H.264 + AAC MP4 or an MP3 in your Downloads folder.
+  maintainer: Arif Shah <10247025+arifbuildsai@users.noreply.github.com>
   target:
     - target: AppImage
-      arch: [x64]
+      arch: [x64, arm64]
     - target: deb
-      arch: [x64]
-  category: Utility
-  artifactName: VidGrab-${version}-${os}.${ext}
+      arch: [x64, arm64]
+    - target: rpm
+      arch: [x64, arm64]
+  artifactName: VidGrab-${version}-${arch}-${os}.${ext}

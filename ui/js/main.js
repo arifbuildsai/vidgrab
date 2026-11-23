@@ -89,6 +89,21 @@
     return t.slice(0, 200);
   }
 
+  /* The reveal button promised "Show in Finder" on every platform, which reads
+     as a bug on Windows and Linux. navigator.platform is enough to pick the
+     right word for the file manager the user actually has. */
+  function osKind() {
+    var p = String(navigator.platform || '');
+    if (p.indexOf('Mac') === 0) return 'mac';
+    if (/^Win/i.test(p)) return 'win';
+    return 'linux';
+  }
+
+  function revealLabel(hasFile) {
+    if (!hasFile) return 'Open folder';
+    return { mac: 'Show in Finder', win: 'Show in Explorer', linux: 'Show in Files' }[osKind()] || 'Show in folder';
+  }
+
   function resetPanels() {
     hide(video);
     hide(quals);
@@ -314,7 +329,7 @@
          panel must not claim a save it did not do. */
       doneWord.textContent = r.already ? 'Already saved' : 'Saved';
       doneFile.textContent = lastFile ? basename(lastFile) : 'in ' + prettyDir(r.dir) + ' folder';
-      revealBtn.textContent = lastFile ? 'Show in Finder' : 'Open folder';
+      revealBtn.textContent = revealLabel(lastFile);
       show(doneBox);
       setBusy(false);
       quals.classList.remove('locked');
@@ -388,7 +403,7 @@
     api.paste().then(function (text) {
       var v = String(text || '').trim();
       if (!v) {
-        hint.textContent = 'Your clipboard is empty — paste with ' + (navigator.platform.indexOf('Mac') === 0 ? 'Cmd+V' : 'Ctrl+V') + '.';
+        hint.textContent = 'Your clipboard is empty — paste with ' + (osKind() === 'mac' ? 'Cmd+V' : 'Ctrl+V') + '.';
         return;
       }
       input.value = v;

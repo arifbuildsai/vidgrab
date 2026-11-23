@@ -8,11 +8,12 @@ One link field. One button. Paste a link, pick a quality, get a file that plays 
 
 [Download](#install) · [How it works](#how-it-works) · [Build from source](#build-from-source) · [Troubleshooting](#troubleshooting)
 
-![Platform](https://img.shields.io/badge/platform-macOS%2011%2B%20%7C%20Windows%20%7C%20Linux-blue)
-![Version](https://img.shields.io/badge/version-1.0.0-informational)
+![Platform](https://img.shields.io/badge/platform-macOS%2011%2B%20%7C%20Windows%2010%2B%20%7C%20Linux-blue)
+![Architectures](https://img.shields.io/badge/arch-Apple%20Silicon%20%7C%20Intel%20%7C%20ARM64%20%7C%20x64-blueviolet)
+![Version](https://img.shields.io/badge/version-1.1.0-informational)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Telemetry](https://img.shields.io/badge/telemetry-none-brightgreen)
-![Size](https://img.shields.io/badge/installer-~94%20MB-lightgrey)
+![Builds](https://img.shields.io/badge/builds-6%20native%20installers-lightgrey)
 
 </div>
 
@@ -70,34 +71,88 @@ The idle state is just the field and the button:
   slices mid-download.
 - **A chime when it finishes**, played from the main process rather than the page, so it
   still sounds when VidGrab is behind other windows — the moment you'd otherwise miss it.
+  macOS plays the system *Glass* sound; Windows and Linux play a bundled two-note bell
+  (`assets/chime.wav`, synthesised in-repo so no third-party audio licence rides along)
+  through `PowerShell`'s `SoundPlayer`, `paplay`, `pw-play`, `aplay`, the freedesktop
+  event-sound helper or `sox`, whichever the machine has. Only when no player exists at all
+  does it fall back to the OS beep.
 - **QuickTime-friendly output by default.** Video is delivered as **H.264 + AAC in an MP4
   container**; audio-only converts to **MP3**. Both verified with `ffprobe`.
 - **YouTube only**, deliberately. It does one thing.
 
 ## Install
 
-### From a release (macOS)
+Six builds are published for every release: **macOS** (Apple Silicon and Intel),
+**Windows** (x64 and ARM64) and **Linux** (x64 and ARM64), each as the native
+package format for that system.
 
-1. Grab the DMG for your Mac from
-   [the latest release](https://github.com/arifbuildsai/vidgrab/releases/latest):
-   `VidGrab-1.0.0-arm64-mac.dmg` for Apple Silicon, `VidGrab-1.0.0-x64-mac.dmg` for Intel.
-2. Open it and drag **VidGrab** into **Applications**.
-3. Launch it. Because the build is unsigned, macOS will complain on the very first open —
-   see [Unsigned builds](#unsigned-builds-and-gatekeeper) below for the 5-second way past it.
+### macOS
 
-### With Homebrew, from source
+Download the DMG for your Mac from
+[the latest release](https://github.com/arifbuildsai/vidgrab/releases/latest):
+
+| File | For |
+|---|---|
+| `VidGrab-1.1.0-arm64-mac.dmg` | **Apple Silicon** — M1 and later. If unsure:  → *About This Mac* → "Chip" says *Apple M…* |
+| `VidGrab-1.1.0-x64-mac.dmg` | **Intel** Macs |
+
+Open the DMG and drag **VidGrab** into **Applications**. The build is unsigned, so
+macOS complains on the very first open — [Unsigned builds and Gatekeeper](#unsigned-builds-and-gatekeeper)
+is the 5-second way past it. Both DMGs carry a native binary for their architecture
+(no Rosetta, no universal fat), and the yt-dlp engine it fetches is a universal
+binary that runs natively on either chip.
+
+### Windows
+
+| File | For |
+|---|---|
+| `VidGrab-Setup-1.1.0-x64-win.exe` | the overwhelming majority of PCs |
+| `VidGrab-Setup-1.1.0-arm64-win.exe` | Windows on ARM — Snapdragon X laptops, Surface Pro 11 |
+
+Run the installer; it's a one-click install into your user profile, no administrator
+rights required. Windows SmartScreen will show *"Windows protected your PC"* on first
+launch because the installer is unsigned — click **More info → Run anyway**. See
+[Windows SmartScreen](#windows-smartscreen).
+
+### Linux
+
+| File | Use it on |
+|---|---|
+| `VidGrab-1.1.0-x64-linux.AppImage` / `-arm64-` | any distro, nothing to install |
+| `VidGrab-1.1.0-x64-linux.deb` / `-arm64-` | Debian, Ubuntu, Mint, Pop!\_OS |
+| `VidGrab-1.1.0-x64-linux.rpm` / `-arm64-` | Fedora, RHEL, CentOS, openSUSE, Arch\* |
+
+```sh
+# AppImage — make it executable once, then run it
+chmod +x VidGrab-1.1.0-x64-linux.AppImage
+./VidGrab-1.1.0-x64-linux.AppImage
+```
+
+```sh
+sudo dpkg -i VidGrab-1.1.0-x64-linux.deb        # Debian / Ubuntu
+sudo rpm -i VidGrab-1.1.0-x64-linux.rpm          # Fedora / RHEL
+```
+
+\* Arch ships `rpm` but the package is really for the rpm-based distros above; on Arch
+the AppImage is the better choice. The `.deb` and `.rpm` install a `vidgrab` launcher
+and the app icon into your desktop environment's application menu.
+
+### From source
+
+Any of the three, with Node 18+:
 
 ```sh
 git clone https://github.com/arifbuildsai/vidgrab.git
 cd vidgrab
 npm install
 npm start          # run it
-npm run dist:mac   # build the DMG into release/
+npm run dist:mac   # or dist:win / dist:linux — installers land in release/
 ```
 
-Windows (`npm run dist:win`, an NSIS installer) and Linux
-(`npm run dist:linux`, AppImage + deb) build from the same tree; the macOS
-installer is the one that has been run end-to-end and shipped.
+Every published artifact is built by
+[`.github/workflows/build.yml`](.github/workflows/build.yml) on a **native runner of its
+own kind** — a macOS ARM64 runner for Apple Silicon, macOS x64 for Intel, Windows for the
+NSIS installers, Ubuntu x64 and Ubuntu ARM64 for Linux. Nothing published is cross-built.
 
 ### Runtime requirements
 
@@ -110,9 +165,29 @@ they're on the machine:
 | **Python 3.11+** | optional | runs the yt-dlp tarball — much faster to start than the standalone binary |
 | **ffmpeg** | optional | muxing video+audio into MP4, and MP3 conversion. Without it, VidGrab offers qualities that need no merging, and audio as M4A instead of MP3 |
 
-If Python is missing or too old, VidGrab falls back to the standalone `yt-dlp` binary.
-That path costs about 30 s the first time (self-extraction) instead of under a second, and
-it's cached, so only the first run pays.
+If Python is missing or too old, VidGrab falls back to the standalone `yt-dlp` binary for
+your platform — `yt-dlp_macos` (a universal x86_64 + ARM64 build), `yt-dlp` on Linux, or
+`yt-dlp.exe` on Windows. That path costs about 30 s the first time (self-extraction)
+instead of under a second, and it's cached, so only the first run pays.
+
+VidGrab finds Python without touching your `PATH` assumptions: on macOS it prefers
+`/opt/homebrew/bin/python3` (the Apple Silicon Homebrew prefix) then `/usr/local/bin`; on
+Linux it scans `PATH`; on Windows it walks the real install roots —
+`%LOCALAPPDATA%\Programs\Python\*`, both `Program Files` folders, and scoop — plus the
+`py.exe` launcher, and it rejects the zero-byte Microsoft Store `python3` alias that only
+opens the Store. The choice is settled by **running** a candidate, never by a version floor
+or a `PATH` guess.
+
+Installing the optional helpers per OS:
+
+| | macOS | Windows | Linux |
+|---|---|---|---|
+| **Python 3.11+** | `brew install python3` | `winget install Python.Python.3.12`, or the installer from python.org | `sudo apt install python3` / `sudo dnf install python3` |
+| **ffmpeg** | `brew install ffmpeg` | `winget install Gyan.FFmpeg`, or drop a build in `C:\ffmpeg\bin` | `sudo apt install ffmpeg` / `sudo dnf install ffmpeg` |
+
+On Windows, VidGrab looks for ffmpeg in `C:\ffmpeg\bin`, both `Program Files\ffmpeg\bin`
+folders, the winget and Chocolatey shim directories, and scoop's `shims` — in addition to
+anything on `PATH`.
 
 ## Using it
 
@@ -217,11 +292,19 @@ ui/index.html          the whole interface — one card
 ui/css/style.css       styling, incl. locked/saved chip states
 ui/js/main.js          renderer state machine, chip persistence, prefetch scheduling
 ui/assets/fonts/       Neucha + Roboto subsets (woff2)
+assets/chime.wav       the completion bell, played on Windows and Linux
 build/                 icon.png, icon.icns, icon.svg, iconset
+tools/make-chime.js    regenerates assets/chime.wav
 tools/verify/          the acceptance harness (see below)
+.github/workflows/     build.yml — the six-artifact native matrix
 docs/screenshots/      the images in this README
 release/               build output — gitignored, published as Release assets
 ```
+
+The chime ships as an **extraResource**, not inside the asar: `afplay`, `paplay` and
+PowerShell's `SoundPlayer` are separate programs and cannot read a path inside
+`app.asar`. `ding()` therefore resolves it from `process.resourcesPath` in a packaged app
+and from beside `src/` in a dev run, and silently degrades to the OS beep if it is missing.
 
 ## Verification
 
@@ -244,6 +327,33 @@ timing, cancel cleanliness, poisoned-URL recovery, and a live watch of a slow vi
 run: **6/6 green**. It reaches the app through `--remote-debugging-port=9223`, so run it
 against a dev build, not the copy in `/Applications`.
 
+### Per-platform correctness
+
+The code paths that differ by OS are the ones most likely to be wrong, so they are named
+here rather than buried:
+
+| Concern | macOS | Windows | Linux |
+|---|---|---|---|
+| Engine binary fallback | `yt-dlp_macos` (universal) | `yt-dlp.exe` | `yt-dlp` |
+| Python discovery | Homebrew ARM64 → Intel → Apple prefixes | install roots + `py.exe`, Store alias rejected | `PATH` scan |
+| Tarball extractor | `/usr/bin/tar` | `tar` on `PATH` (bsdtar; no `--strip-components`) | `/usr/bin/tar` or `tar` |
+| Exec bit + quarantine | `chmod` + `xattr -d com.apple.quarantine` | skipped (no exec bit) | `chmod` |
+| Completion chime | system *Glass* via `afplay` | bundled WAV via PowerShell `SoundPlayer` | bundled WAV via `paplay`/`pw-play`/`aplay`/`canberra`/`sox` |
+| Reveal button | *Show in Finder* | *Show in Explorer* | *Show in Files* |
+| Menu bar | full app menu, always visible | auto-hidden, `Alt` reveals | auto-hidden, `Alt` reveals |
+| Quit on window close | no (stays in the Dock) | yes | yes |
+
+Filenames are sanitized against **Windows** rules specifically, because they are the strict
+ones: `\ / : * ? " < > |` and control characters become spaces, reserved device names
+(`CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9`) get a leading underscore, and a
+component never ends in a dot or a space — so a title finishing in `...` can't produce a
+path Windows refuses.
+
+CI builds each artifact on a runner of its own architecture and then **verifies the bundle
+really matches it** (`lipo -archs` on the built `.app`), confirms `chime.wav` landed
+outside the asar, and mounts the DMG to read `CFBundleIdentifier` and `CFBundleName` back
+before uploading.
+
 ## Troubleshooting
 
 ### Unsigned builds and Gatekeeper
@@ -264,6 +374,45 @@ Open Anyway** right after the blocked attempt.
 If you built or copied the app locally rather than downloading it, there is no quarantine
 flag and it opens normally — which is why a freshly built DMG seems to work with no fuss on
 the machine that made it.
+
+### Windows SmartScreen
+
+The NSIS installer is unsigned, so SmartScreen shows *"Windows protected your PC"* — a
+blue box with no **Run** button until you click **More info**. Then:
+
+1. **More info** → **Run anyway**.
+
+That's a one-time prompt per installer version. Signing would clear it, and that needs a
+paid code-signing certificate with an EV or trusted-history key — the same reason the macOS
+build is unsigned. Verify the SHA256 from the release page before you accept the prompt:
+
+```powershell
+Get-FileHash .\VidGrab-Setup-1.1.0-x64-win.exe -Algorithm SHA256
+```
+
+### Linux
+
+- **AppImage won't run** — `chmod +x VidGrab-1.1.0-x64-linux.AppImage` first; downloaded
+  copies lose the executable bit.
+- **AppImage aborts on a newer distro** with `libfuse.so.2` not found — AppImage 2 needs
+  FUSE, which Ubuntu 22.04+ and Fedora dropped by default. Either `sudo apt install
+  libfuse2` (or `sudo dnf install fuse-libs`), or run it already extracted:
+  `./VidGrab-1.1.0-x64-linux.AppImage --appimage-extract-and-run`.
+- **No sound on completion** — the chime tries `paplay`, `pw-play`, `aplay`,
+  `canberra-gtk-play` and `play` in turn. On a headless or Wayland-only session with none
+  of them installed you get the OS beep instead; installing `pulseaudio-utils` or
+  `sox` gives you the real tone.
+- **The window opens with no icon in the dock/taskbar** — that's the desktop environment
+  not finding the installed `.desktop` entry, which only the `.deb`/`.rpm` packages
+  register. AppImage installs it via *Update AppImage* → integrate, or use the package.
+- **`vidgrab: command not found`** after a `.deb`/`.rpm` install — the launcher is
+  `vidgrab`; log out and in again, or run it from the application menu.
+
+### ARM64 Linux
+
+The ARM64 AppImage, `.deb` and `.rpm` are built on an ARM64 runner, so they're native on
+Raspberry Pi 5, AWS Graviton, Apple Silicon Linux VMs and ARM laptops. Nothing is
+cross-built or emulated.
 
 ### "Something went wrong reading that video"
 

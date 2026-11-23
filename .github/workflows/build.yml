@@ -1,0 +1,276 @@
+name: build
+
+# VidGrab ships installers for six OS/architecture combinations. Each one is
+# built on a runner of its own kind, because a macOS .app cannot be honestly
+# produced on Linux, and an NSIS installer cannot be honestly produced on
+# anything but Windows. Cross-building under wine or QEMU is used only for the
+# local Docker path, never for a published artifact.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            arch: arm64
+            args: --mac --arm64
+            artifact: mac-arm64
+          - os: macos-13
+            arch: x64
+            args: --mac --x64
+            artifact: mac-x64
+          - os: windows-latest
+            arch: x64
+            args: --win --x64
+            artifact: win-x64
+          - os: windows-latest
+            arch: arm64
+            args: --win --arm64
+            artifact: win-arm64
+          - os: ubuntu-latest
+            arch: x64
+            args: --linux --x64
+            artifact: linux-x64
+          - os: ubuntu-24.04-arm
+            arch: arm64
+            args: --linux --arm64
+            artifact: linux-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: install dependencies
+        run: npm ci
+
+      - name: lint
+        run: npm run lint
+
+      # Unsigned on purpose: CSC_IDENTITY_AUTO_DISCOVERY=false stops
+      # electron-builder from picking up whatever certificate happens to be in
+      # the runner's keychain. macOS builds therefore hit Gatekeeper on first
+      # open, which the README documents.
+      - name: build ${{ matrix.artifact }}
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder ${{ matrix.args }}
+
+      - name: verify the bundle matches its target architecture
+        if: startsWith(matrix.artifact, 'mac-')
+        run: |
+          set -e
+          APP=$(find release -maxdepth 2 -name 'VidGrab.app' -type d | head -1)
+          test -n "$APP" || { echo "no .app produced"; ls -R release | head -40; exit 1; }
+          BIN=$(find "$APP/Contents/MacOS" -type f -perm +111 | head -1)
+          test -n "$BIN" || { echo "no executable in Contents/MacOS"; exit 1; }
+          ARCHS=$(lipo -archs "$BIN")
+          echo "  $BIN"
+          echo "  bundle architectures: $ARCHS   (job wants ${{ matrix.arch }})"
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            case "$ARCHS" in *arm64*) ;; *) echo "  MISMATCH: wanted arm64"; exit 1 ;; esac
+          else
+            case "$ARCHS" in *x86_64*) ;; *) echo "  MISMATCH: wanted x86_64"; exit 1 ;; esac
+          fi
+          # The chime must sit OUTSIDE the asar: afplay is a separate program and
+          # cannot read a path inside app.asar.
+          test -f "$APP/Contents/Resources/chime.wav" || { echo "chime.wav missing from Contents/Resources"; exit 1; }
+          echo "  chime.wav present outside the asar"
+
+      - name: verify the installer mounts and holds the app
+        if: startsWith(matrix.artifact, 'mac-')
+        run: |
+          set -e
+          DMG=$(find release -maxdepth 1 -name '*.dmg' | head -1)
+          test -n "$DMG" || { echo "no dmg"; exit 1; }
+          M=$(mktemp -d)
+          hdiutil attach "$DMG" -nobrowse -readonly -mountpoint "$M"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$M/VidGrab.app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$M/VidGrab.app/Contents/Info.plist"
+          test -f "$M/VidGrab.app/Contents/Resources/chime.wav" || { echo "chime missing in dmg"; exit 1; }
+          hdiutil detach "$M"
+
+      - name: verify the unpacked bundle carries the chime outside the asar
+        if: startsWith(matrix.artifact, 'linux-')
+        run: |
+          set -e
+          U=$(find release -maxdepth 1 -type d -name 'linux-unpacked*' | head -1)
+          test -n "$U" || { echo "no linux-unpacked"; ls release; exit 1; }
+          test -f "$U/resources/chime.wav" || { echo "chime.wav missing from resources/"; find "$U" -name 'chime*' ; exit 1; }
+          echo "  ok  $U/resources/chime.wav"
+          # A native ELF for the job's architecture, not an emulated one.
+          BIN=$(find "$U" -maxdepth 1 -type f -name vidgrab | head -1)
+          file "$BIN" | sed 's/^/  /'
+          case "${{ matrix.arch }}" in
+            arm64) file "$BIN" | grep -q 'aarch64\|ARM aarch64' || { echo "  MISMATCH: not arm64"; exit 1; } ;;
+            x64)   file "$BIN" | grep -q 'x86-64' || { echo "  MISMATCH: not x86-64"; exit 1; } ;;
+          esac
+          echo "  ok  native ${{ matrix.arch }} binary"
+
+      - name: verify the installer holds the chime and the right arch
+        if: startsWith(matrix.artifact, 'linux-')
+        run: |
+          set -e
+          for pkg in $(find release -maxdepth 1 \( -name '*.deb' -o -name '*.rpm' \) -type f); do
+            echo "-- $pkg"
+            case "$pkg" in
+              *.deb) dpkg-deb -c "$pkg" | grep -E 'chime.wav|/vidgrab$' | sed 's/^/     /'
+                     dpkg-deb -f "$pkg" Architecture | sed 's/^/     Architecture: /' ;;
+              *.rpm) rpm -qlp "$pkg" 2>/dev/null | grep -E 'chime.wav|bin/vidgrab$' | sed 's/^/     /' ;;
+            esac
+            if ! { dpkg-deb -c "$pkg" 2>/dev/null || rpm -qlp "$pkg" 2>/dev/null; } | grep -q chime.wav; then
+              echo "   chime.wav absent from $pkg"; exit 1
+            fi
+            echo "   ok  chime.wav shipped"
+          done
+
+      - name: verify the NSIS installer contains the chime
+        if: startsWith(matrix.artifact, 'win-')
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem release -Filter '*.exe' | Where-Object { $_.Name -notlike '*unblocked*' } | Select-Object -First 1
+          if (-not $exe) { Write-Host "no installer exe"; exit 1 }
+          Write-Host "  $($exe.Name)  $([math]::Round($exe.Length/1MB,1)) MB"
+          # 7-Zip reads the NSIS payload as an archive, so the file list is
+          # checkable without running an installer on the runner.
+          & "${env:ProgramFiles}\7-Zip\7z.exe" l "$($exe.FullName)" | Select-String -Pattern 'chime\.wav|vidgrab\.exe'
+          if (-not (& "${env:ProgramFiles}\7-Zip\7z.exe" l "$($exe.FullName)" | Select-String -Pattern 'chime\.wav')) {
+            Write-Host "  chime.wav absent from the installer"; exit 1
+          }
+          Write-Host "  ok  chime.wav shipped"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/*.exe
+            release/*.AppImage
+            release/*.deb
+            release/*.rpm
+            release/*.blockmap
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+
+      - name: checksums
+        run: |
+          cd assets
+          # Everything except the checksum file itself; some globs match nothing
+          # on a given tag, so iterate the real directory instead of a pattern.
+          : > SHA256SUMS
+          find . -maxdepth 1 -type f ! -name SHA256SUMS -exec sha256sum {} + \
+            | sed 's|\./||' | sort -k2 > SHA256SUMS
+          cat SHA256SUMS
+
+      # The body is generated from the files that actually exist, so it can never
+      # advertise an artifact name or a checksum that does not match this tag.
+      - name: write the release body
+        run: |
+          set -e
+          TAG=${GITHUB_REF#refs/tags/}
+          {
+            echo "> **Unsigned builds.** No Developer ID certificate and no notarisation, so macOS"
+            echo "> Gatekeeper and Windows SmartScreen each block the first open of a downloaded copy,"
+            echo "> and a Linux AppImage needs its executable bit set. This is a certificate gap, not a"
+            echo "> tampered download — check the table below, then read"
+            echo "> [Troubleshooting](https://github.com/arifbuildsai/vidgrab#troubleshooting)."
+            echo
+            echo "## Which file do I want? ($TAG)"
+            echo
+            echo "| File | For | Size | SHA256 |"
+            echo "|---|---|---:|---|"
+            for f in assets/*; do
+              b=$(basename "$f")
+              [ "$b" = "SHA256SUMS" ] && continue
+              sz=$(du -m "$f" | cut -f1)
+              h=$(sha256sum "$f" | cut -d' ' -f1)
+              case "$b" in
+                *arm64-mac.dmg)  use="macOS — **Apple Silicon** (M1+). Unsure?  → About This Mac → Chip says *Apple M…*" ;;
+                *x64-mac.dmg)    use="macOS — **Intel**" ;;
+                *arm64-mac.zip)  use="macOS Apple Silicon, unzipped instead of mounted" ;;
+                *x64-mac.zip)    use="macOS Intel, unzipped instead of mounted" ;;
+                *x64-win.exe)    use="Windows — **x64**, the overwhelming majority of PCs" ;;
+                *arm64-win.exe)  use="Windows on **ARM** — Snapdragon X, Surface Pro 11" ;;
+                *x64-linux.AppImage) use="Linux x64 — no install, run directly" ;;
+                *arm64-linux.AppImage) use="Linux ARM64 — no install (Pi 5, Graviton, ARM laptops)" ;;
+                *x64-linux.deb)  use="Debian / Ubuntu / Mint x64" ;;
+                *arm64-linux.deb) use="Debian / Ubuntu / Mint ARM64" ;;
+                *x64-linux.rpm)  use="Fedora / RHEL / openSUSE x64" ;;
+                *arm64-linux.rpm) use="Fedora / RHEL / openSUSE ARM64" ;;
+                *)               use="—" ;;
+              esac
+              echo "| \`$b\` | $use | ${sz} MB | \`$h\` |"
+            done
+            echo
+            echo "Verify your copy:"
+            echo
+            echo '```sh'
+            echo 'shasum -a 256 -c SHA256SUMS        # macOS / Linux'
+            echo "Get-FileHash .\\VidGrab-Setup-${TAG#v}-x64-win.exe -Algorithm SHA256   # Windows PowerShell"
+            echo '```'
+            echo
+            echo "## Install"
+            echo
+            echo "- **macOS** — open the DMG, drag VidGrab into Applications, then clear the quarantine"
+            echo "  flag once: \`sudo xattr -dr com.apple.quarantine /Applications/VidGrab.app\`"
+            echo "- **Windows** — run the installer; one-click into your user profile, no admin rights."
+            echo "  SmartScreen: **More info → Run anyway**."
+            echo "- **Linux** — \`chmod +x\` the AppImage and run it, or \`sudo dpkg -i\` / \`sudo rpm -i\`"
+            echo "  the package for a menu entry and icon."
+            echo
+            echo "## What is in VidGrab"
+            echo
+            echo "One link field, one button. Paste a YouTube link, pick a quality that genuinely exists"
+            echo "for that video, get an H.264 + AAC MP4 that plays in QuickTime — or an MP3. No account,"
+            echo "no extension, no telemetry: the renderer's CSP is \`connect-src 'none'\`, so the page"
+            echo "cannot reach the network at all."
+            echo
+            echo "- **Ranged parallel fetch.** YouTube serves an open-ended GET at ~24 KiB/s and the same"
+            echo "  URL with a \`Range\` header at 1.1–2.4 MB/s. VidGrab splits every stream into four"
+            echo "  ranged requests and launches them the moment the probe announces a length: a 176 MB"
+            echo "  1080p video drops from over an hour to **8.4 minutes**."
+            echo "- **Only downloadable qualities are offered.** Each chip is resolved against the real"
+            echo "  format list, so a quality the app cannot deliver never appears as a button."
+            echo "- **Speed and time left never blank**, through pauses, retries and the final merge."
+            echo "- **Cancel is clean** (\`⌘.\` / \`Ctrl+.\`): every slice killed, scratch folder removed."
+            echo "- **A completion chime** from the main process, so it sounds with the window backgrounded."
+            echo
+            echo "Full detail, per-platform notes and the acceptance harness:"
+            echo "[README](https://github.com/arifbuildsai/vidgrab#readme)."
+            echo
+            echo "Built on native runners for macOS (Apple Silicon + Intel), Windows (x64 + ARM64) and"
+            echo "Linux (x64 + ARM64). [MIT](https://github.com/arifbuildsai/vidgrab/blob/main/LICENSE)"
+            echo "© [Arif Shah](https://github.com/arifbuildsai)."
+          } > /tmp/body.md
+          cat /tmp/body.md
+
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          TAG=${GITHUB_REF#refs/tags/}
+          gh release create "$TAG" --title "VidGrab $TAG" --notes-file /tmp/body.md assets/*
