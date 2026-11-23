@@ -36,7 +36,6 @@ nsis:
   perMachine: false
   createDesktopShortcut: true
   allowToChangeInstallationDirectory: false
-  installerLanguages: en_US
 linux:
   icon: build/icon.png
   category: Utility

@@ -20,11 +20,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             arch: arm64
             args: --mac --arm64
             artifact: mac-arm64
-          - os: macos-13
+          # macos-13 was GitHub's last x64 runner and is retired. An ARM64
+          # runner builds the x64 .app just fine: there is no native
+          # compilation, only the per-arch Electron zip, and hdiutil is
+          # arch-agnostic.
+          - os: macos-15
             arch: x64
             args: --mac --x64
             artifact: mac-x64
