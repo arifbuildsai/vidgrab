@@ -1,0 +1,35 @@
+{
+  "name": "vidgrab-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "VidGrab — a minimal YouTube downloader desktop app. One link field, one button; H.264 + AAC MP4 that opens in QuickTime.",
+  "main": "src/main.js",
+  "author": {
+    "name": "Arif Shah",
+    "url": "https://github.com/arifbuildsai"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/arifbuildsai/vidgrab.git"
+  },
+  "bugs": {
+    "url": "https://github.com/arifbuildsai/vidgrab/issues"
+  },
+  "homepage": "https://github.com/arifbuildsai/vidgrab#readme",
+  "scripts": {
+    "start": "electron .",
+    "lint": "node --check src/main.js && node --check src/preload.js && node --check ui/js/main.js",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win",
+    "dist:linux": "electron-builder --linux",
+    "dist:all": "electron-builder --mac --win --linux"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "allowScripts": {
+    "electron@33.4.11": true
+  }
+}

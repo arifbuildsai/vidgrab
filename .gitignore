@@ -1,0 +1,20 @@
+# dependencies
+node_modules/
+
+# build output (installers are published as GitHub Release assets, not committed)
+release/
+*.dmg
+*.zip
+*.blockmap
+*.AppImage
+*.deb
+*.exe
+
+# logs and scratch
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.env

@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5a95f8"/>
+      <stop offset="0.5" stop-color="#2f6ff2"/>
+      <stop offset="1" stop-color="#1d4ed8"/>
+    </linearGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".28"/>
+      <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="arrow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#dbeafe"/>
+    </linearGradient>
+  </defs>
+  <!-- macOS Big Sur squircle, artwork inset to Apple's margin -->
+  <rect x="100" y="100" width="824" height="824" rx="184" fill="url(#bg)"/>
+  <rect x="100" y="100" width="824" height="824" rx="184" fill="url(#gloss)"/>
+  <!-- VidGrab download arrow (site motif), centered -->
+  <g transform="translate(236 264) scale(4.3)" fill="url(#arrow)">
+    <path d="M49 0h30v34h13L64 68 36 34h13z"/>
+    <path d="M20 58 64 117l44-59H86L64 87 42 58z"/>
+  </g>
+  <!-- white play tile from the logo, bottom corner badge -->
+  <g transform="translate(636 636)">
+    <rect width="180" height="180" rx="44" fill="#ffffff"/>
+    <path d="M74 56v68l56-34z" fill="#2563eb"/>
+  </g>
+</svg>
