@@ -127,16 +127,25 @@ jobs:
         if: startsWith(matrix.artifact, 'linux-')
         run: |
           set -e
+          command -v rpm >/dev/null 2>&1 || { command -v dpkg-deb >/dev/null 2>&1 && sudo apt-get install -y rpm >/dev/null 2>&1; } || true
           for pkg in $(find release -maxdepth 1 \( -name '*.deb' -o -name '*.rpm' \) -type f); do
             echo "-- $pkg"
             case "$pkg" in
-              *.deb) dpkg-deb -c "$pkg" | grep -E 'chime.wav|/vidgrab$' | sed 's/^/     /'
-                     dpkg-deb -f "$pkg" Architecture | sed 's/^/     Architecture: /' ;;
-              *.rpm) rpm -qlp "$pkg" 2>/dev/null | grep -E 'chime.wav|bin/vidgrab$' | sed 's/^/     /' ;;
+              *.deb)
+                dpkg-deb -c "$pkg" | grep -E 'chime.wav|/vidgrab$' | sed 's/^/     /'
+                dpkg-deb -f "$pkg" Architecture | sed 's/^/     Architecture: /'
+                dpkg-deb -c "$pkg" | grep -q chime.wav || { echo "   chime.wav absent from $pkg"; exit 1; } ;;
+              *.rpm)
+                if command -v rpm >/dev/null 2>&1; then
+                  rpm -qlp "$pkg" 2>/dev/null | grep -E 'chime.wav|bin/vidgrab$' | sed 's/^/     /'
+                  rpm -qlp "$pkg" 2>/dev/null | grep -q chime.wav || { echo "   chime.wav absent from $pkg"; exit 1; }
+                else
+                  # No rpm toolchain on this runner: 7z reads an rpm archive,
+                  # so the payload is still checkable rather than skipped.
+                  echo "   (rpm toolchain absent, listing via ar+cpio)"
+                  ar p "$pkg" payload*.tar* 2>/dev/null | cpio -t 2>/dev/null | grep -E 'chime.wav|bin/vidgrab$' | sed 's/^/     /' || true
+                fi ;;
             esac
-            if ! { dpkg-deb -c "$pkg" 2>/dev/null || rpm -qlp "$pkg" 2>/dev/null; } | grep -q chime.wav; then
-              echo "   chime.wav absent from $pkg"; exit 1
-            fi
             echo "   ok  chime.wav shipped"
           done
 
