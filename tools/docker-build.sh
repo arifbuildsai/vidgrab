@@ -34,12 +34,13 @@ docker run --rm --platform linux/amd64 \
   bash -lc "node -v && npm ci --no-audit --no-fund && npx electron-builder ${TARGETS[*]}" \
   2>&1 | tail -40
 
+setopt NO_NOMATCH          # absent artifact types are normal, not an error
 echo "== artifacts produced =="
 find "$STAGE/release" -maxdepth 1 -type f \( -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' -o -name '*.exe' -o -name '*.yml' -o -name '*.blockmap' \) -printf '  %10s  %f\n' 2>/dev/null \
   || ls -l "$STAGE/release" | sed 's/^/  /'
 
 OUT="$ROOT/release-xbuild"
-mkdir -p "$OUT"
+mkdir -p "$OUT"; rm -rf "$OUT"/*
 cp -a "$STAGE/release"/*.AppImage "$STAGE/release"/*.deb "$STAGE/release"/*.rpm \
       "$STAGE/release"/*.exe "$STAGE/release"/*.blockmap "$OUT/" 2>/dev/null || true
 echo "== copied to $OUT =="

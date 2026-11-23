@@ -8,8 +8,8 @@ files:
   - ui/**
   - build/icon.png
   - package.json
-/* The chime is played by afplay, paplay and PowerShell — separate programs that
-   cannot read inside app.asar — so it ships beside the asar, not inside it. */
+# The chime is played by afplay, paplay and PowerShell — separate programs that
+# cannot read inside app.asar — so it ships beside the asar, not inside it.
 extraResources:
   - from: assets/chime.wav
     to: chime.wav
