@@ -118,24 +118,30 @@ launch because the installer is unsigned — click **More info → Run anyway**.
 
 | File | Use it on |
 |---|---|
-| `VidGrab-1.1.0-x64-linux.AppImage` / `-arm64-` | any distro, nothing to install |
-| `VidGrab-1.1.0-x64-linux.deb` / `-arm64-` | Debian, Ubuntu, Mint, Pop!\_OS |
-| `VidGrab-1.1.0-x64-linux.rpm` / `-arm64-` | Fedora, RHEL, CentOS, openSUSE, Arch\* |
+| `VidGrab-1.1.0-x86_64-linux.AppImage` | any x64 distro, nothing to install |
+| `VidGrab-1.1.0-arm64-linux.AppImage` | any ARM64 distro — Pi 5, Graviton, ARM laptops |
+| `VidGrab-1.1.0-amd64-linux.deb` | Debian, Ubuntu, Mint, Pop!\_OS (x64) |
+| `VidGrab-1.1.0-arm64-linux.deb` | the same, on ARM64 |
 
 ```sh
 # AppImage — make it executable once, then run it
-chmod +x VidGrab-1.1.0-x64-linux.AppImage
-./VidGrab-1.1.0-x64-linux.AppImage
+chmod +x VidGrab-1.1.0-x86_64-linux.AppImage
+./VidGrab-1.1.0-x86_64-linux.AppImage
 ```
 
 ```sh
-sudo dpkg -i VidGrab-1.1.0-x64-linux.deb        # Debian / Ubuntu
-sudo rpm -i VidGrab-1.1.0-x64-linux.rpm          # Fedora / RHEL
+sudo dpkg -i VidGrab-1.1.0-amd64-linux.deb       # Debian / Ubuntu
 ```
 
-\* Arch ships `rpm` but the package is really for the rpm-based distros above; on Arch
-the AppImage is the better choice. The `.deb` and `.rpm` install a `vidgrab` launcher
-and the app icon into your desktop environment's application menu.
+The `.deb` installs a `vidgrab` launcher and registers the app icon in your desktop
+environment's application menu. **On Fedora, RHEL, openSUSE or Arch, use the AppImage** —
+there is no `.rpm`, because `rpmbuild` is not available on the Ubuntu CI runners that build
+these artifacts. The AppImage runs identically on all of them; only the menu entry and icon
+come from the `.deb`.
+
+Note the architecture token differs per package type — electron-builder expands `${arch}`
+to `x86_64` for AppImage and `amd64` for deb, so the filenames above are what you will
+actually see on the release page.
 
 ### From source
 
@@ -405,14 +411,18 @@ Get-FileHash .\VidGrab-Setup-1.1.0-x64-win.exe -Algorithm SHA256
 - **The window opens with no icon in the dock/taskbar** — that's the desktop environment
   not finding the installed `.desktop` entry, which only the `.deb`/`.rpm` packages
   register. AppImage installs it via *Update AppImage* → integrate, or use the package.
-- **`vidgrab: command not found`** after a `.deb`/`.rpm` install — the launcher is
-  `vidgrab`; log out and in again, or run it from the application menu.
+- **`vidgrab: command not found`** after a `.deb` install — the launcher is `vidgrab`;
+  log out and in again, or run it from the application menu.
+- **No `.rpm` is published** — Fedora/RHEL/openSUSE/Arch users use the AppImage instead.
+  `rpmbuild` is absent from the Ubuntu runners, so an RPM target fails there rather than
+  shipping something untested.
 
 ### ARM64 Linux
 
-The ARM64 AppImage, `.deb` and `.rpm` are built on an ARM64 runner, so they're native on
+The ARM64 AppImage and `.deb` are built on an ARM64 runner, so they're native on
 Raspberry Pi 5, AWS Graviton, Apple Silicon Linux VMs and ARM laptops. Nothing is
-cross-built or emulated.
+cross-built or emulated — `file` on the built binary reports `ARM aarch64` and the CI job
+asserts it.
 
 ### "Something went wrong reading that video"
 

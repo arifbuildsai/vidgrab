@@ -48,6 +48,9 @@ linux:
       arch: [x64, arm64]
     - target: deb
       arch: [x64, arm64]
-    - target: rpm
-      arch: [x64, arm64]
+    # RPM is deliberately absent. fpm drives rpmbuild, and rpmbuild is not
+    # present or usable on the Ubuntu runners, so both linux jobs failed with
+    # "rpmbuild failed (exit code 1)" on the first matrix run — while the AppImage
+    # and deb half of the same job succeeded. Fedora/RHEL/openSUSE/Arch users get
+    # the AppImage, which needs no install and no package manager.
   artifactName: VidGrab-${version}-${arch}-${os}.${ext}
