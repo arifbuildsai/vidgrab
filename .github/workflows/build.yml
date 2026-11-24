@@ -327,10 +327,40 @@ jobs:
         run: |
           set -e
           TAG=${GITHUB_REF#refs/tags/}
-          # Only real installers. A stray builder-debug.yml in assets/ would make
-          # `gh release create` fail on a non-binary upload.
+          # --repo is required, not cosmetic: this job checks out nothing, so its
+          # working directory is not a git repository and gh refuses to infer
+          # which repo the release belongs to ("fatal: not a git repository").
+          # Only real installers go up. A stray builder-debug.yml in assets/ would
+          # make `gh release create` fail on a non-binary upload.
           find assets -maxdepth 1 -type f \
             \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' \
                -o -name '*.AppImage' -o -name '*.deb' -o -name 'SHA256SUMS' \) \
             -print0 | xargs -0 gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
               --title "VidGrab $TAG" --notes-file /tmp/body.md
+
+      # A release that says "6 native installers" must carry all of them. Naming
+      # each expected file catches a job that uploaded nothing, a name electron-builder
+      # changed under us, and a glob that silently matched less than it looked like.
+      - name: confirm every expected installer is attached
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          TAG=${GITHUB_REF#refs/tags/}
+          V=${TAG#v}
+          HAVE=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name' | sort)
+          echo "$HAVE" | sed 's/^/  attached: /'
+          echo "$HAVE" | grep -q '^SHA256SUMS$' || { echo "  SHA256SUMS missing"; exit 1; }
+          echo "$HAVE" | grep -q 'blockmap' && { echo "  a .blockmap was published — the cleanup step failed"; exit 1; }
+          miss=0
+          for want in \
+            "VidGrab-$V-arm64-mac.dmg" "VidGrab-$V-arm64-mac.zip" \
+            "VidGrab-$V-x64-mac.dmg"   "VidGrab-$V-x64-mac.zip" \
+            "VidGrab-Setup-$V-x64-win.exe" "VidGrab-Setup-$V-arm64-win.exe" \
+            "VidGrab-$V-x86_64-linux.AppImage" "VidGrab-$V-arm64-linux.AppImage" \
+            "VidGrab-$V-amd64-linux.deb"; do
+            echo "$HAVE" | grep -qx "$want" || { echo "  MISSING: $want"; miss=1; }
+          done
+          [ "$miss" = 0 ] || { echo "  release is incomplete — not marking it latest"; exit 1; }
+          echo "  ok  all 9 installers + SHA256SUMS attached to $TAG"

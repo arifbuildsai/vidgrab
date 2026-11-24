@@ -15,6 +15,16 @@ extraResources:
     to: chime.wav
 asar: true
 compression: normal
+# publish: never — electron-builder's default is `onTag`, which means that when a
+# v* tag is pushed with GH_TOKEN present it uploads its OWN draft GitHub release:
+# every installer plus the .blockmap deltas and the latest*.yml auto-update feeds.
+# That is a second publisher racing the release job in .github/workflows/build.yml,
+# and it publishes update-feed manifests for an app that has no electron-updater
+# and no publish: key to serve them from. The workflow owns the release: one body,
+# one SHA256SUMS, installers only. GH_TOKEN is still needed on the build step for
+# electron-builder to download its own helper binaries (nsis, winCodeSign,
+# AppImage tooling) from GitHub Releases.
+publish: never
 # No `arch:` array on mac/win targets on purpose. When a target lists several
 # arches in config, electron-builder builds all of them and the CLI --arm64 /
 # --x64 flag does not narrow it — so every CI job produced both bundles and the
