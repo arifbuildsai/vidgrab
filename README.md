@@ -371,10 +371,25 @@ ones: `\ / : * ? " < > |` and control characters become spaces, reserved device 
 component never ends in a dot or a space — so a title finishing in `...` can't produce a
 path Windows refuses.
 
-CI builds each artifact on a runner of its own architecture and then **verifies the bundle
-really matches it** (`lipo -archs` on the built `.app`), confirms `chime.wav` landed
-outside the asar, and mounts the DMG to read `CFBundleIdentifier` and `CFBundleName` back
-before uploading.
+CI builds each artifact on a runner of its own architecture and then verifies it there, per
+platform, rather than trusting that packaging worked:
+
+- **macOS** — `lipo -archs` on the built `.app` must report the arch the job asked for
+  (`arm64` jobs read `release/mac-arm64/`, x64 jobs `release/mac/`, selected by directory so
+  a sibling bundle can never be mistaken for it); then the DMG is mounted and
+  `CFBundleIdentifier` / `CFBundleName` / `chime.wav` are read back out of it.
+- **Linux** — `chime.wav` beside `app.asar` in the unpacked tree, `file` on the binary
+  reports `x86-64` or `ARM aarch64`, the AppImage carries its executable bit, and for the
+  x64 job `dpkg-deb` confirms the `.deb`'s `Architecture: amd64` and its chime.
+- **Windows** — `chime.wav` in `win[-arch64]-unpacked/resources/`, plus the installer exe
+  existing. The unpacked tree is what the NSIS installer packs, so it is the honest place to
+  look: an `.exe` is a self-extracting stub whose payload 7-Zip sees as one opaque entry, so
+  listing the exe can never find an individual resource file. (The first matrix run failed
+  both Windows jobs that way — the builds were fine, the assertion was impossible.)
+
+The arch is passed on the command line per job and deliberately not listed inside
+`electron-builder.yml`: a per-target `arch:` array makes electron-builder build every one of
+them in a single run, so two jobs write the same filenames.
 
 ## Troubleshooting
 
