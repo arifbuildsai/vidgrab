@@ -1,10 +1,13 @@
 name: build
 
-# VidGrab ships installers for six OS/architecture combinations. Each one is
-# built on a runner of its own kind, because a macOS .app cannot be honestly
-# produced on Linux, and an NSIS installer cannot be honestly produced on
-# anything but Windows. Cross-building under wine or QEMU is used only for the
-# local Docker path, never for a published artifact.
+# VidGrab ships installers for six OS/architecture combinations, one job each, and
+# every package carries the prebuilt Electron binary native to its target arch — a
+# macOS .app cannot be honestly produced on Linux, and an NSIS installer cannot be
+# honestly produced on anything but Windows. Four jobs run on a runner of the arch
+# they target; macOS x64 (GitHub retired its last x64 macOS image) and Windows ARM64
+# are assembled on the other chip, which is sound because nothing is compiled there
+# and hdiutil/NSIS are arch-agnostic. Cross-building under wine or QEMU is used only
+# for the local Docker path, never for a published artifact.
 
 on:
   push:
