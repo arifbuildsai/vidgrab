@@ -9,8 +9,14 @@
 # and only the artifacts come back.
 #
 # Usage: tools/docker-build.sh <target...>
-#   tools/docker-build.sh --linux --x64
+#   tools/docker-build.sh --linux AppImage --x64     # the safe local linux build
 #   tools/docker-build.sh --win --x64
+#
+# For Linux, ask for AppImage explicitly. electron-builder.yml also lists .deb,
+# and .deb is built with fpm — a Ruby program that is NOT installed in this
+# image (and that GitHub's ARM64 runners cannot execute either, since the
+# bundled fpm is an x86_64 build). The AppImage half needs no external packager
+# and builds cleanly here.
 set -e
 IMG=docker.io/electronuserland/builder:wine-mono
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"          # repo root
@@ -26,10 +32,12 @@ rsync -a --exclude node_modules --exclude release --exclude .git \
 du -sh "$STAGE" | sed 's/^/  stage: /'
 
 echo "== building in container: ${TARGETS[*]} =="
+# No USE_SYSTEM_FPM here: the image has no system fpm, so setting it makes the
+# deb step fail with "executable file not found in $PATH" instead of using the
+# fpm electron-builder ships and downloads itself.
 docker run --rm --platform linux/amd64 \
   -v "$STAGE":/project -w /project \
   -e CSC_IDENTITY_AUTO_DISCOVERY=false \
-  -e USE_SYSTEM_FPM=true \
   "$IMG" \
   bash -lc "node -v && npm ci --no-audit --no-fund && npx electron-builder ${TARGETS[*]}" \
   2>&1 | tail -40

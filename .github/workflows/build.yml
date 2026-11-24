@@ -46,7 +46,9 @@ jobs:
             artifact: linux-x64
           - os: ubuntu-24.04-arm
             arch: arm64
-            args: --linux --arm64
+            # AppImage only: an arm64 runner cannot run fpm (x86_64 ruby), so no
+            # .deb from this job. The CLI target list overrides electron-builder.yml.
+            args: --linux AppImage --arm64
             artifact: linux-arm64
     runs-on: ${{ matrix.os }}
     steps:
@@ -84,10 +86,14 @@ jobs:
         if: startsWith(matrix.artifact, 'mac-')
         run: |
           set -e
-          APP=$(find release -maxdepth 2 -name 'VidGrab.app' -type d | head -1)
-          test -n "$APP" || { echo "no .app produced"; ls -R release | head -40; exit 1; }
-          BIN=$(find "$APP/Contents/MacOS" -type f -perm +111 | head -1)
-          test -n "$BIN" || { echo "no executable in Contents/MacOS"; exit 1; }
+          # electron-builder writes arm64 to mac-arm64/ and x64 to the legacy mac/.
+          if [ "${{ matrix.arch }}" = "arm64" ]; then DIRS="release/mac-arm64"; else DIRS="release/mac release/mac-x64"; fi
+          APP=""
+          for d in $DIRS; do [ -d "$d/VidGrab.app" ] && APP="$d/VidGrab.app" && break; done
+          test -n "$APP" || { echo "no VidGrab.app under: $DIRS"; ls -R release | head -40; exit 1; }
+          BIN="$APP/Contents/MacOS/VidGrab"
+          test -f "$BIN" || BIN=$(find "$APP/Contents/MacOS" -type f | head -1)
+          test -n "$BIN" || { echo "no executable in $APP/Contents/MacOS"; exit 1; }
           ARCHS=$(lipo -archs "$BIN")
           echo "  $BIN"
           echo "  bundle architectures: $ARCHS   (job wants ${{ matrix.arch }})"
@@ -99,7 +105,7 @@ jobs:
           # The chime must sit OUTSIDE the asar: afplay is a separate program and
           # cannot read a path inside app.asar.
           test -f "$APP/Contents/Resources/chime.wav" || { echo "chime.wav missing from Contents/Resources"; exit 1; }
-          echo "  chime.wav present outside the asar"
+          echo "  ok  $APP is native ${{ matrix.arch }}, chime.wav outside the asar"
 
       - name: verify the installer mounts and holds the app
         if: startsWith(matrix.artifact, 'mac-')
@@ -118,12 +124,22 @@ jobs:
         if: startsWith(matrix.artifact, 'linux-')
         run: |
           set -e
-          U=$(find release -maxdepth 1 -type d -name 'linux-unpacked*' | head -1)
-          test -n "$U" || { echo "no linux-unpacked"; ls release; exit 1; }
+          # Prefer the arch-specific dir electron-builder writes; fall back to the
+          # only unpacked dir present if the naming ever shifts, rather than
+          # failing on a path assumption.
+          if [ "${{ matrix.arch }}" = "arm64" ]; then WANT="release/linux-arm64-unpacked"; else WANT="release/linux-unpacked"; fi
+          U="$WANT"
+          if [ ! -d "$U" ]; then
+            ALT=$(find release -maxdepth 1 -type d -name 'linux*unpacked*' | head -1)
+            [ -n "$ALT" ] && U="$ALT"
+          fi
+          test -d "$U" || { echo "no unpacked dir (wanted $WANT)"; ls release; exit 1; }
+          [ "$U" = "$WANT" ] || echo "  note: using $U instead of $WANT"
           test -f "$U/resources/chime.wav" || { echo "chime.wav missing from resources/"; find "$U" -name 'chime*' ; exit 1; }
           echo "  ok  $U/resources/chime.wav"
           # A native ELF for the job's architecture, not an emulated one.
           BIN=$(find "$U" -maxdepth 1 -type f -name vidgrab | head -1)
+          test -n "$BIN" || { echo "no vidgrab binary in $U"; ls "$U" | head -20; exit 1; }
           file "$BIN" | sed 's/^/  /'
           case "${{ matrix.arch }}" in
             arm64) file "$BIN" | grep -q 'aarch64\|ARM aarch64' || { echo "  MISMATCH: not arm64"; exit 1; } ;;
@@ -135,37 +151,50 @@ jobs:
         if: startsWith(matrix.artifact, 'linux-')
         run: |
           set -e
-          # Only .deb is produced: rpm needs rpmbuild, which the Ubuntu runners
-          # do not provide, and fpm's bundled ruby is x86-only so it cannot even
-          # run on the arm64 runner.
+          # Every linux job produces an AppImage; only x64 also produces a .deb
+          # (an arm64 runner cannot execute fpm's x86_64 ruby). Assert the
+          # AppImage exists first, so a missing artifact is caught here rather
+          # than at upload.
+          APPIMG=$(find release -maxdepth 1 -name '*.AppImage' -type f | head -1)
+          test -n "$APPIMG" || { echo "no AppImage produced"; ls release; exit 1; }
+          test -x "$APPIMG" || { echo "AppImage is not executable: $APPIMG"; exit 1; }
+          echo "  ok  executable $(basename "$APPIMG")"
           for pkg in $(find release -maxdepth 1 -name '*.deb' -type f); do
             echo "-- $pkg"
             dpkg-deb -c "$pkg" | grep -E 'chime.wav|/vidgrab$' | sed 's/^/     /'
             dpkg-deb -f "$pkg" Architecture | sed 's/^/     Architecture: /'
             dpkg-deb -c "$pkg" | grep -q chime.wav || { echo "   chime.wav absent from $pkg"; exit 1; }
-            echo "   ok  chime.wav shipped"
-          done
-          # The AppImage must be executable and carry the right arch internally.
-          for ai in $(find release -maxdepth 1 -name '*.AppImage' -type f); do
-            echo "-- $ai"
-            test -x "$ai" || { echo "   AppImage is not executable"; exit 1; }
-            echo "   ok  executable bit set"
+            echo "   ok  chime.wav shipped in $(basename "$pkg")"
           done
 
-      - name: verify the NSIS installer contains the chime
+      - name: verify the unpacked bundle carries the chime, and the installer exists
         if: startsWith(matrix.artifact, 'win-')
         shell: pwsh
         run: |
-          $exe = Get-ChildItem release -Filter '*.exe' | Where-Object { $_.Name -notlike '*unblocked*' } | Select-Object -First 1
-          if (-not $exe) { Write-Host "no installer exe"; exit 1 }
-          Write-Host "  $($exe.Name)  $([math]::Round($exe.Length/1MB,1)) MB"
-          # 7-Zip reads the NSIS payload as an archive, so the file list is
-          # checkable without running an installer on the runner.
-          & "${env:ProgramFiles}\7-Zip\7z.exe" l "$($exe.FullName)" | Select-String -Pattern 'chime\.wav|vidgrab\.exe'
-          if (-not (& "${env:ProgramFiles}\7-Zip\7z.exe" l "$($exe.FullName)" | Select-String -Pattern 'chime\.wav')) {
-            Write-Host "  chime.wav absent from the installer"; exit 1
+          # An NSIS exe is a self-extracting stub: its resources live inside a
+          # nested payload archive that 7z lists as one opaque entry, not as
+          # individual files. So the chime is asserted on the unpacked tree (what
+          # the installer is built from), mirroring the Linux check — not by
+          # listing the exe.
+          $want = if ('${{ matrix.arch }}' -eq 'arm64') { 'release/win-arm64-unpacked' } else { 'release/win-unpacked' }
+          $dir = $want
+          if (-not (Test-Path $dir)) {
+            $alt = Get-ChildItem release -Directory -Filter 'win*unpacked*' | Select-Object -First 1
+            if ($alt) { $dir = $alt.FullName; Write-Host "  note: using $dir instead of $want" }
           }
-          Write-Host "  ok  chime.wav shipped"
+          if (-not (Test-Path $dir)) {
+            Write-Host "  no unpacked dir (wanted $want)"; Get-ChildItem release | ForEach-Object { Write-Host "    $($_.Name)" }; exit 1
+          }
+          $chime = Join-Path $dir 'resources/chime.wav'
+          if (-not (Test-Path $chime)) { Write-Host "  chime.wav absent from $chime"; Get-ChildItem (Join-Path $dir 'resources') | ForEach-Object { Write-Host "    $($_.Name)" }; exit 1 }
+          Write-Host "  ok  $chime outside the asar"
+          # The app's own exe must be in the tree the installer packs.
+          $appExe = Get-ChildItem $dir -Filter '*.exe' -File | Select-Object -First 1
+          if (-not $appExe) { Write-Host "  no exe in $dir"; exit 1 }
+          Write-Host "  ok  $($appExe.Name)  $([math]::Round($appExe.Length/1MB,1)) MB"
+          $exe = Get-ChildItem release -Filter '*.exe' -File | Where-Object { $_.Name -notlike '*unblocked*' } | Select-Object -First 1
+          if (-not $exe) { Write-Host "  no NSIS installer produced"; exit 1 }
+          Write-Host "  ok  installer $($exe.Name)  $([math]::Round($exe.Length/1MB,1)) MB"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -189,6 +218,17 @@ jobs:
         with:
           path: assets
           merge-multiple: true
+
+      # .blockmap files are the manifest electron-updater uses for differential
+      # downloads. VidGrab has no update feed and does not load electron-updater
+      # (no publish: key, no autoUpdater in src/), so nothing consumes them — and
+      # leaving them here would put rows in the release table and lines in
+      # SHA256SUMS for files that are not actually attached to the release.
+      - name: drop artifacts nothing can use
+        run: |
+          find assets -maxdepth 1 -type f -name '*.blockmap' -print -delete | sed 's/^/  removed: /'
+          echo "  remaining:"
+          ls -1 assets | sed 's/^/    /'
 
       - name: checksums
         run: |
@@ -229,10 +269,9 @@ jobs:
                 *x64-mac.zip)    use="macOS Intel, unzipped instead of mounted" ;;
                 *x64-win.exe)    use="Windows — **x64**, the overwhelming majority of PCs" ;;
                 *arm64-win.exe)  use="Windows on **ARM** — Snapdragon X, Surface Pro 11" ;;
-                *x64-linux.AppImage) use="Linux x64 — no install, run directly" ;;
-                *arm64-linux.AppImage) use="Linux ARM64 — no install (Pi 5, Graviton, ARM laptops)" ;;
-                *amd64-linux.deb) use="Debian / Ubuntu / Mint x64" ;;
-                *arm64-linux.deb) use="Debian / Ubuntu / Mint ARM64" ;;
+                *x86_64-linux.AppImage) use="Linux x64 — any distro, no install, run directly" ;;
+                *arm64-linux.AppImage) use="Linux ARM64 — any distro (Pi 5, Graviton, ARM laptops)" ;;
+                *amd64-linux.deb) use="Debian / Ubuntu / Mint / Pop!\_OS — x64 (menu entry + icon)" ;;
                 *)               use="—" ;;
               esac
               echo "| \`$b\` | $use | ${sz} MB | \`$h\` |"
@@ -251,8 +290,10 @@ jobs:
             echo "  flag once: \`sudo xattr -dr com.apple.quarantine /Applications/VidGrab.app\`"
             echo "- **Windows** — run the installer; one-click into your user profile, no admin rights."
             echo "  SmartScreen: **More info → Run anyway**."
-            echo "- **Linux** — \`chmod +x\` the AppImage and run it, or \`sudo dpkg -i\` / \`sudo rpm -i\`"
-            echo "  the package for a menu entry and icon."
+            echo "- **Linux** — \`chmod +x\` the AppImage and run it: works on x64 and ARM64 alike, on any"
+            echo "  distro, with no install. On Debian/Ubuntu x64 the \`.deb\` adds a menu entry and icon"
+            echo "  (\`sudo dpkg -i\`). Fedora/RHEL/openSUSE/Arch have the AppImage — no RPM is published,"
+            echo "  because GitHub's Ubuntu runners ship no usable \`rpmbuild\`."
             echo
             echo "## What is in VidGrab"
             echo

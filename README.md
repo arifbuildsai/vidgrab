@@ -120,8 +120,11 @@ launch because the installer is unsigned — click **More info → Run anyway**.
 |---|---|
 | `VidGrab-1.1.0-x86_64-linux.AppImage` | any x64 distro, nothing to install |
 | `VidGrab-1.1.0-arm64-linux.AppImage` | any ARM64 distro — Pi 5, Graviton, ARM laptops |
-| `VidGrab-1.1.0-amd64-linux.deb` | Debian, Ubuntu, Mint, Pop!\_OS (x64) |
-| `VidGrab-1.1.0-arm64-linux.deb` | the same, on ARM64 |
+| `VidGrab-1.1.0-amd64-linux.deb` | Debian, Ubuntu, Mint, Pop!\_OS (x64) — menu entry + icon |
+
+There is no ARM64 `.deb`. Building one needs `fpm`, and electron-builder's bundled `fpm`
+is an x86\_64 Ruby program that cannot execute on an ARM64 runner (`Exec format error`) —
+so the ARM64 build publishes the AppImage only, which is the same app, uninstalled.
 
 ```sh
 # AppImage — make it executable once, then run it
@@ -280,10 +283,23 @@ npm start           # dev run, with a visible Electron window
 Installers, unsigned:
 
 ```sh
-CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:mac    # release/*.dmg + *.zip, arm64 + x64
-CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:win    # release/VidGrab-Setup-*-win.exe
-CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:linux  # release/*.AppImage, *.deb
+CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:mac    # .dmg + .zip, for the host arch
+CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:win    # VidGrab-Setup-*.exe, host arch
+CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:linux  # .AppImage (+ .deb on x64)
 ```
+
+Each architecture is a separate invocation, the way CI runs it:
+
+```sh
+npx electron-builder --mac --arm64      # → release/VidGrab-1.1.0-arm64-mac.{dmg,zip}
+npx electron-builder --mac --x64        # → release/VidGrab-1.1.0-x64-mac.{dmg,zip}
+npx electron-builder --linux AppImage --arm64   # no .deb: fpm is x86_64-only
+```
+
+The arch is a command-line flag on purpose. Listing arches inside
+`electron-builder.yml` makes electron-builder build every one of them in a single run and
+ignore the flag — so two jobs write the same filenames and the per-arch verification ends
+up checking the wrong bundle. That was the `mac-arm64` failure in the first matrix run.
 
 `CSC_IDENTITY_AUTO_DISCOVERY=false` stops electron-builder from grabbing whatever signing
 identity happens to be in your keychain. Bundle identity is `net.vidgrab.desktop`, product
@@ -398,19 +414,20 @@ Get-FileHash .\VidGrab-Setup-1.1.0-x64-win.exe -Algorithm SHA256
 
 ### Linux
 
-- **AppImage won't run** — `chmod +x VidGrab-1.1.0-x64-linux.AppImage` first; downloaded
+- **AppImage won't run** — `chmod +x VidGrab-1.1.0-x86_64-linux.AppImage` first; downloaded
   copies lose the executable bit.
 - **AppImage aborts on a newer distro** with `libfuse.so.2` not found — AppImage 2 needs
   FUSE, which Ubuntu 22.04+ and Fedora dropped by default. Either `sudo apt install
   libfuse2` (or `sudo dnf install fuse-libs`), or run it already extracted:
-  `./VidGrab-1.1.0-x64-linux.AppImage --appimage-extract-and-run`.
+  `./VidGrab-1.1.0-x86_64-linux.AppImage --appimage-extract-and-run`.
 - **No sound on completion** — the chime tries `paplay`, `pw-play`, `aplay`,
   `canberra-gtk-play` and `play` in turn. On a headless or Wayland-only session with none
   of them installed you get the OS beep instead; installing `pulseaudio-utils` or
   `sox` gives you the real tone.
 - **The window opens with no icon in the dock/taskbar** — that's the desktop environment
-  not finding the installed `.desktop` entry, which only the `.deb`/`.rpm` packages
-  register. AppImage installs it via *Update AppImage* → integrate, or use the package.
+  not finding the installed `.desktop` entry, which only the `.deb` package registers
+  (there is no `.rpm`). AppImage can install it via *Update AppImage* → integrate, or
+  install the `.deb` on x64 Debian/Ubuntu systems.
 - **`vidgrab: command not found`** after a `.deb` install — the launcher is `vidgrab`;
   log out and in again, or run it from the application menu.
 - **No `.rpm` is published** — Fedora/RHEL/openSUSE/Arch users use the AppImage instead.
@@ -419,19 +436,24 @@ Get-FileHash .\VidGrab-Setup-1.1.0-x64-win.exe -Algorithm SHA256
 
 ### ARM64 Linux
 
-The ARM64 AppImage and `.deb` are built on an ARM64 runner, so they're native on
-Raspberry Pi 5, AWS Graviton, Apple Silicon Linux VMs and ARM laptops. Nothing is
-cross-built or emulated — `file` on the built binary reports `ARM aarch64` and the CI job
-asserts it.
+The ARM64 AppImage is built on an ARM64 runner, so it's native on Raspberry Pi 5,
+AWS Graviton, Apple Silicon Linux VMs and ARM laptops. Nothing is cross-built or emulated —
+`file` on the built binary reports `ARM aarch64` and the CI job asserts it.
+
+The one thing ARM64 Linux gives up is the `.deb`: `fpm`, the packager electron-builder
+calls for `.deb`, is distributed as an x86\_64 Ruby binary, so it cannot run on an ARM64
+runner at all. On ARM64 Debian/Ubuntu, run the AppImage (`chmod +x`, then execute) or
+extract it once and launch the binary inside.
 
 ### "Something went wrong reading that video"
 
 - The link is dead or private — `BaW_jenozKc` is a known-gone video and fails exactly this
   way, which is what the error path is tested against.
 - First run downloads the yt-dlp engine from GitHub; a network that blocks that will fail
-  here. The engine caches under
-  `~/Library/Application Support/vidgrab-desktop/bin/`, so once it lands, later runs are
-  offline-capable up to the point of reading a link.
+  here. The engine caches under the app's user-data directory:
+  `~/Library/Application Support/vidgrab-desktop/bin/` on macOS,
+  `%APPDATA%\vidgrab-desktop\bin\` on Windows, `~/.config/vidgrab-desktop/bin/` on Linux.
+  Once it lands, later runs are offline-capable up to the point of reading a link.
 - Deleting that `bin/` folder forces a fresh engine fetch.
 
 ### MP3 missing, or offered as M4A

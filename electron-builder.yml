@@ -15,21 +15,23 @@ extraResources:
     to: chime.wav
 asar: true
 compression: normal
+# No `arch:` array on mac/win targets on purpose. When a target lists several
+# arches in config, electron-builder builds all of them and the CLI --arm64 /
+# --x64 flag does not narrow it — so every CI job produced both bundles and the
+# architecture check picked the wrong one. Arch is driven per job on the
+# command line instead (see .github/workflows/build.yml).
 mac:
   category: public.app-category.utilities
   icon: build/icon.icns
   minimumSystemVersion: '11.0'
   target:
-    - target: dmg
-      arch: [arm64, x64]
-    - target: zip
-      arch: [arm64, x64]
+    - dmg
+    - zip
   artifactName: VidGrab-${version}-${arch}-${os}.${ext}
 win:
   icon: build/icon.png
   target:
-    - target: nsis
-      arch: [x64, arm64]
+    - nsis
   artifactName: VidGrab-Setup-${version}-${arch}-${os}.${ext}
 nsis:
   oneClick: true
@@ -44,13 +46,14 @@ linux:
   description: VidGrab is a minimal YouTube downloader. Paste a link, pick a quality that really exists for that video, and get an H.264 + AAC MP4 or an MP3 in your Downloads folder.
   maintainer: Arif Shah <10247025+arifbuildsai@users.noreply.github.com>
   target:
-    - target: AppImage
-      arch: [x64, arm64]
-    - target: deb
-      arch: [x64, arm64]
-    # RPM is deliberately absent. fpm drives rpmbuild, and rpmbuild is not
-    # present or usable on the Ubuntu runners, so both linux jobs failed with
-    # "rpmbuild failed (exit code 1)" on the first matrix run — while the AppImage
-    # and deb half of the same job succeeded. Fedora/RHEL/openSUSE/Arch users get
-    # the AppImage, which needs no install and no package manager.
+    # Names only, no arch array — the CLI drives the arch per job.
+    #
+    # .deb is produced from the x64 job only. It needs fpm, and electron-builder's
+    # bundled fpm is an x86_64 Ruby build that cannot execute on an ARM64 Linux
+    # runner ("Exec format error"), so an arm64 runner cannot build any .deb. The
+    # linux-arm64 job therefore passes `--linux AppImage` on the command line, which
+    # overrides this list. Fedora/RHEL/openSUSE get the AppImage too: rpmbuild is
+    # absent from the Ubuntu runners.
+    - AppImage
+    - deb
   artifactName: VidGrab-${version}-${arch}-${os}.${ext}
