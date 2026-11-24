@@ -80,7 +80,10 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx electron-builder ${{ matrix.args }}
+        # --publish never: without it, electron-builder's default onTag policy
+        # makes this step publish its own draft release (with .blockmap and
+        # latest*.yml update manifests) and race the release job below.
+        run: npx electron-builder --publish never ${{ matrix.args }}
 
       - name: verify the bundle matches its target architecture
         if: startsWith(matrix.artifact, 'mac-')
