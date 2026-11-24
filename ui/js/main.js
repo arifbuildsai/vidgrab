@@ -146,9 +146,17 @@
     return name;
   }
 
-  /* Thumbnails come from YouTube; only trusted image hosts are allowed in. */
+  /* Thumbnails come from YouTube; only trusted image hosts are allowed in.
+     A base64 data: URL is admitted too, and it weakens nothing here: it carries
+     its own bytes, so it can never make the outbound request the host list
+     exists to prevent — the one source that cannot leak the user's address. It is
+     how the VG_DEMO_SHOTS seam hands over a local poster (tools/verify/
+     demo-video.js) for the README screenshots, so the real paint path runs
+     instead of a special case in this file. Image types only, base64 only: not
+     text/html, and not a URL-shaped string wearing a data: prefix. */
   function safeThumb(url) {
     try {
+      if (typeof url === 'string' && /^data:image\/(png|jpe?g|webp|gif|avif);base64,[A-Za-z0-9+/=]+$/.test(url)) return url;
       var u = new URL(url);
       if (u.protocol !== 'https:') return null;
       var ok = /(^|\.)ytimg\.com$/.test(u.hostname) || /(^|\.)googleusercontent\.com$/.test(u.hostname) || /(^|\.)ggpht\.com$/.test(u.hostname);

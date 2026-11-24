@@ -1,14 +1,32 @@
-/* The user's requirement, on a video that is genuinely slow here (16 min,
-   their own test upload): once the speed and ETA appear, they never blank
-   until the file is saved — including through any pause. Watches the live
-   caption for up to WATCH seconds; if the video is still going then, cancels
-   (cancel is proven clean by canceltest) and still passes, because what is
-   under test is the caption, not the file. */
+/* The user's requirement, on a video long enough to still be transferring when
+   the watch window closes: Blender Foundation's Big Buck Bunny (10.5 min,
+   open-license, animated — no person's likeness or channel in this repo's test
+   scripts). The highest chip is picked so the transfer runs past WATCH instead
+   of finishing inside it. Actual stalls are proven deterministically offline by
+   stallcheck.js with a fake clock; what this boot adds is that the same
+   invariant holds against live YouTube traffic. Watches the live caption for up
+   to WATCH seconds; if the video is still going then, cancels (cancel is proven
+   clean by canceltest) and still passes, because what is under test is the
+   caption, not the file. */
 'use strict';
 const H = require('./cdp');
 const [,, wsUrl, url] = process.argv;
 const VID = (/v=([\w-]{6,})/.exec(url) || [])[1] || '';
-const WATCH = 150000;
+/* 75s, not 150s. The best chip on the target video is a 268 MB video+audio pair,
+   so a longer window lets the transfer FINISH and the job walk into its ffmpeg
+   merge — a 10-minute re-encode of 1080p60 VP9, which is neither the caption
+   under test nor a fast boot. Cancelling inside 75s lands while bytes are still
+   moving at ~2 MiB/s, which is exactly the state whose numbers must hold. */
+const WATCH = 75000;
+/* A harness that overruns should FAIL, not hang: every CDP call here is an
+   unbounded await, so one that never returns used to keep the whole acceptance
+   suite attached to a live app until its own caller timed out (13 minutes of
+   silence, output lost down a pipe). This is the backstop. */
+const watchdog = setTimeout(() => {
+  console.log('HARNESS FAIL: exceeded ' + ((WATCH + 90000) / 1000) + 's wall clock — a CDP call never returned');
+  process.exit(1);
+}, WATCH + 90000);
+watchdog.unref?.();
 const problems = [];
 const fails = [];
 const check = (cond, msg) => { if (!cond) fails.push(msg); console.log((cond ? '  ok   ' : '  FAIL ') + msg); };
@@ -23,8 +41,10 @@ const check = (cond, msg) => { if (!cond) fails.push(msg); console.log((cond ? '
   const r = await H.paste(c, url);
   check(r.ok, 'paste reached ready');
   if (!r.ok) process.exit(1);
-  /* prefer a low video chip if offered — the point is a long, slow transfer */
-  const pick = r.chips.find((x) => /^(h?(144|240|360)p?)$/i.test(x.label)) || r.chips[0];
+  /* Biggest chip first: a small file finishes inside the watch window and the
+     stall path never gets observed. chips[0] is 'best' — renderQuals leads the
+     row with it, and the planner only lists a height it can actually deliver. */
+  const pick = r.chips[0];
   console.log('pressing chip: ' + pick.id + ' (' + pick.label + ')');
   await c.ev(`(function(){var b=[...document.querySelectorAll(".qual")].find(function(x){return x.dataset.id===${JSON.stringify(pick.id)}});if(b)b.click()})()`);
 

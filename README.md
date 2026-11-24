@@ -39,7 +39,13 @@ player you already use — are fiddly, and everything wrapping them tends to be 
 | Ready | Downloading | Done |
 |:-----:|:-----------:|:----:|
 | ![Qualities listed](docs/screenshots/2-ready.png) | ![Progress with speed and ETA](docs/screenshots/3-progress.png) | ![Saved, with Show in Finder](docs/screenshots/4-done.png) |
-| Link read → real qualities listed | Bytes, speed, time left | File on disk, revealed in Finder |
+| Link read → the qualities it offers | Bytes, speed, time left | File on disk, revealed in Finder |
+
+The card above reads **"VidGrab Demo"** because these four images are shot against a
+synthetic video, not a real channel — `node tools/verify/shots-demo.js` drives the
+interface through its normal states while the `VG_DEMO_SHOTS` seam answers with a
+locally generated poster and a timed fake transfer. Same renderer, same chips, same
+progress logic, same CSS; nothing is fetched from YouTube while it runs.
 
 The idle state is just the field and the button:
 
@@ -340,14 +346,24 @@ node tools/verify/stallcheck.js             # offline: speed/ETA across stalls, 
 node tools/verify/multiquality.js <ws> <url>  # two qualities from one paste
 node tools/verify/canceltest.js <ws>        # cancel with 4 slices in flight, then disk audit
 node tools/verify/prefetchtest.js <ws> <url>  # read-after-typing timing
-node tools/verify/slowwatch.js <ws> <url>   # live watch of a genuinely slow video
-node tools/verify/shots.js                  # regenerate docs/screenshots/
+node tools/verify/slowwatch.js <ws> <url>   # live watch of a long transfer
+node tools/verify/shots-demo.js [poster]    # regenerate docs/screenshots/ offline
+node tools/verify/shots.js                  # same four states against a real video
 ```
 
+`shots-demo.js` is the one that reproduces the images in this README: it switches on the
+`VG_DEMO_SHOTS` seam, so it needs no network and no real channel, and writes its frames
+to `tools/verify/shots-demo/` for a human to look at before they are copied into
+`docs/screenshots/`.
+
 The suite's six checks: stall proof (speed/ETA never blank), two-quality flow, prefetch
-timing, cancel cleanliness, poisoned-URL recovery, and a live watch of a slow video. Last
-run: **6/6 green**. It reaches the app through `--remote-debugging-port=9223`, so run it
-against a dev build, not the copy in `/Applications`.
+timing, cancel cleanliness, poisoned-URL recovery, and a live watch of a long transfer
+(the last on Blender Foundation's Big Buck Bunny — 10.5 min, open-license, so the highest
+chip keeps bytes moving past the watch window and the cancel lands mid-stream rather than
+inside an ffmpeg merge). Last run: **6/6 green**, 24 Nov 2026. It reaches the app through
+`--remote-debugging-port=9223`, so run it against a dev build, not the copy in
+`/Applications`. Redirect its output to a file rather than piping it: a killed run that
+was writing through `tail` reports nothing at all.
 
 ### Per-platform correctness
 

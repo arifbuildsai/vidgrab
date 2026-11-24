@@ -59,6 +59,24 @@ const FORCE_ENGINE = DEBUG && !!(process.env.VG_FORCE_ENGINE || '').trim();
    recover through the engine" route is exercised on demand instead of waiting
    hours for a signature to actually rot. */
 const POISON_URLS = DEBUG && !!(process.env.VG_POISON_URLS || '').trim();
+/* Test seam, likewise. VG_DEMO_SHOTS=1 answers vg:info and vg:start from a
+   synthetic video instead of YouTube, so the four images in docs/screenshots are
+   produced by the REAL renderer over real IPC traffic — same chips, same progress
+   line, same done panel, same CSS — with a locally generated poster and no real
+   channel behind it. Nothing is fetched while it is set.
+
+   It cannot reach a shipped build twice over: it needs VG_DEBUG as well, and the
+   payload factory lives in tools/verify/, which electron-builder does not bundle
+   (files: src/** ui/**). The seam is also unreachable from the page — contextBridge
+   freezes window.vidgrab and marks every member non-writable, so the renderer
+   cannot talk itself into demo mode. */
+const DEMO_SHOTS = DEBUG && !!(process.env.VG_DEMO_SHOTS || '').trim();
+/* Required lazily, so the module is never even parsed in a normal run. */
+const demoVideo = () => require(path.join(__dirname, '..', 'tools', 'verify', 'demo-video.js'));
+/* The demo borrows the app's own formatters and filename rule instead of carrying
+   copies, so a demo size, rate or ETA can never be spelled differently from a
+   live one. */
+const demoCtx = () => ({ humanSize, humanDuration, safeName, send });
 const planCache = new Map(); // url -> resolved format plan from the last read
 
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
@@ -2045,8 +2063,8 @@ if (!gotLock) {
     }
     buildMenu();
 
-    ipcMain.handle('vg:info', (_e, url) => videoInfo(url));
-    ipcMain.handle('vg:start', (_e, url, fmtId) => startDownload(url, fmtId));
+    ipcMain.handle('vg:info', (_e, url) => (DEMO_SHOTS ? demoVideo().info(demoCtx()) : videoInfo(url)));
+    ipcMain.handle('vg:start', (_e, url, fmtId) => (DEMO_SHOTS ? demoVideo().start(demoCtx(), fmtId) : startDownload(url, fmtId)));
     ipcMain.handle('vg:cancel', () => {
       const killed = cancelJob();
       if (killed) send('vg:cancelled', {});

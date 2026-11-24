@@ -3,14 +3,17 @@
 #   1. normal: fast path, two qualities, prefetch, cancel cleanup.
 #   2. VG_POISON_URLS=1: stream URLs are dead by design — proves the
 #      expired-signature recovery through the engine still lands real files.
-#   3. the user's slow test video: speed/ETA never blank; cancel is clean.
+#   3. a long open-license video (Big Buck Bunny): speed/ETA never blank on live
+#      traffic. Stalls themselves are proven offline by stallcheck.js.
 # Nothing here rebuilds installers.
 setopt NO_NOMATCH
 H="$(cd "$(dirname "$0")" && pwd)"          # tools/verify
 APP="$(cd "$H/../.." && pwd)"               # repo root
-rm -rf ~/Downloads/*AiwzmmTG39U* ~/Downloads/*jNQXAC9IVRw* ~/Downloads/.vidgrab-* 2>/dev/null
+rm -rf ~/Downloads/*aqz-KE-bpKQ* ~/Downloads/*jNQXAC9IVRw* ~/Downloads/.vidgrab-* 2>/dev/null
 FAST="https://www.youtube.com/watch?v=jNQXAC9IVRw"
-SLOW="https://www.youtube.com/watch?v=AiwzmmTG39U"
+# Blender Foundation's open movie: 10.5 min, so the best chip keeps transferring
+# past slowwatch's window. No real channel's work sits in a test script here.
+SLOW="https://www.youtube.com/watch?v=aqz-KE-bpKQ"
 say() { print -r -- "\n########## $1 ##########"; }
 
 boot() {
@@ -45,7 +48,7 @@ boot "poisoned URLs" "VG_POISON_URLS=1" acc2.log
 node "$H/multiquality.js" "$WS" "$FAST" 2>&1 | tail -24
 print -r -- "-- main log --"; grep "\[vg\]" "$H/acc2.log" | head -8
 
-say "BOOT 3 — the genuinely slow video (stall requirement, live)"
+say "BOOT 3 — a long live transfer (caption never blanks)"
 boot "slow video" "" acc3.log
 node "$H/slowwatch.js" "$WS" "$SLOW" 2>&1 | tail -22
 

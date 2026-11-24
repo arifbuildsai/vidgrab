@@ -20,3 +20,5 @@ Thumbs.db
 .env
 # byproducts the verification harness writes beside itself
 tools/verify/shot-*.png
+tools/verify/shots/
+tools/verify/shots-demo/
