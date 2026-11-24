@@ -6,14 +6,16 @@
 
 One link field. One button. Paste a link, pick a quality, get a file that plays in QuickTime.
 
-[Download](#install) · [How it works](#how-it-works) · [Build from source](#build-from-source) · [Troubleshooting](#troubleshooting)
+[⬇ **Download**](https://github.com/arifbuildsai/vidgrab/releases/latest) · [Which file?](#install) · [How it works](#how-it-works) · [Build from source](#build-from-source) · [Troubleshooting](#troubleshooting)
 
 ![Platform](https://img.shields.io/badge/platform-macOS%2011%2B%20%7C%20Windows%2010%2B%20%7C%20Linux-blue)
 ![Architectures](https://img.shields.io/badge/arch-Apple%20Silicon%20%7C%20Intel%20%7C%20ARM64%20%7C%20x64-blueviolet)
-![Version](https://img.shields.io/badge/version-1.1.0-informational)
+![Version](https://img.shields.io/github/v/release/arifbuildsai/vidgrab?display_name=tag&label=version&color=informational)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Telemetry](https://img.shields.io/badge/telemetry-none-brightgreen)
-![Builds](https://img.shields.io/badge/builds-6%20native%20installers-lightgrey)
+![Packages](https://img.shields.io/badge/packages-9%20installer%20files-lightgrey)
+
+[![Download for macOS, Windows or Linux](https://img.shields.io/badge/%E2%AC%87%20Download-macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-2563eb?style=for-the-badge)](https://github.com/arifbuildsai/vidgrab/releases/latest)
 
 </div>
 
@@ -88,69 +90,75 @@ The idle state is just the field and the button:
 
 ## Install
 
-Six builds are published for every release: **macOS** (Apple Silicon and Intel),
-**Windows** (x64 and ARM64) and **Linux** (x64 and ARM64), each as the native
-package format for that system.
+One link, one page, every system:
+**[github.com/arifbuildsai/vidgrab/releases/latest](https://github.com/arifbuildsai/vidgrab/releases/latest)**.
+That page groups the builds under **macOS**, **Windows** and **Linux**, and every file name
+on it is itself the download link — find your operating system, then the row that matches
+your chip, and click it. Nothing else is required: no account, no installer source, no
+package manager.
 
-### macOS
+The release page's tables are generated from the files actually attached to that release, so
+its names, sizes and SHA256 checksums cannot go stale. This section deliberately does not
+repeat the file names — they carry the version number, so any list written here would be
+wrong the day the next release ships. What the release page cannot know is which of your
+machines is which, so that is the part covered below.
 
-Download the DMG for your Mac from
-[the latest release](https://github.com/arifbuildsai/vidgrab/releases/latest):
+### Which build matches my machine?
 
-| File | For |
-|---|---|
-| `VidGrab-1.1.0-arm64-mac.dmg` | **Apple Silicon** — M1 and later. If unsure:  → *About This Mac* → "Chip" says *Apple M…* |
-| `VidGrab-1.1.0-x64-mac.dmg` | **Intel** Macs |
+| Your system | Take the file whose name contains | |
+|---|---|---|
+| Mac, **Apple Silicon** (M1 or later) | `-arm64-mac.dmg` | Unsure?  → *About This Mac* — "Chip" says *Apple M…* |
+| Mac, **Intel** | `-x64-mac.dmg` | Every DMG holds a native binary for its own architecture: no Rosetta, no fat universal build |
+| PC, **x64** | `-x64-win.exe` | The overwhelming majority of PCs |
+| PC, **ARM64** | `-arm64-win.exe` | Snapdragon X laptops, Surface Pro 11 |
+| Linux, **x64** | `-x86_64-linux.AppImage` | Any distro, nothing to install |
+| Linux, **x64**, Debian-family | `-amd64-linux.deb` | Debian, Ubuntu, Mint, Pop!\_OS — adds a menu entry and icon |
+| Linux, **ARM64** | `-arm64-linux.AppImage` | Raspberry Pi 5, Graviton, ARM laptops |
 
-Open the DMG and drag **VidGrab** into **Applications**. The build is unsigned, so
-macOS complains on the very first open — [Unsigned builds and Gatekeeper](#unsigned-builds-and-gatekeeper)
-is the 5-second way past it. Both DMGs carry a native binary for their architecture
-(no Rosetta, no universal fat), and the yt-dlp engine it fetches is a universal
-binary that runs natively on either chip.
+Two things in that middle column look inconsistent and are not:
 
-### Windows
+- The architecture token changes with the package format — electron-builder expands
+  `${arch}` to `x86_64` for an AppImage and `amd64` for a `.deb`. Same chip, two spellings.
+- The `.zip` builds (`-arm64-mac.zip`, `-x64-mac.zip`) are the same app as the DMG, unzipped
+  rather than mounted, if you would rather not deal with a disk image.
 
-| File | For |
-|---|---|
-| `VidGrab-Setup-1.1.0-x64-win.exe` | the overwhelming majority of PCs |
-| `VidGrab-Setup-1.1.0-arm64-win.exe` | Windows on ARM — Snapdragon X laptops, Surface Pro 11 |
+Six CI jobs produce nine files: each macOS job emits both a DMG and a zip, the Windows jobs
+one installer each, and Linux three (two from x64, one from ARM64).
 
-Run the installer; it's a one-click install into your user profile, no administrator
-rights required. Windows SmartScreen will show *"Windows protected your PC"* on first
-launch because the installer is unsigned — click **More info → Run anyway**. See
+### After it downloads
+
+**macOS** — open the DMG and drag **VidGrab** into **Applications**. The build is unsigned,
+so the first open is blocked once by Gatekeeper;
+[Unsigned builds and Gatekeeper](#unsigned-builds-and-gatekeeper) is the 5-second way past
+it. The yt-dlp engine the app fetches on first run is a universal binary, so it runs
+natively on either chip.
+
+**Windows** — run the installer: one click, into your user profile, no administrator rights
+required. SmartScreen shows *"Windows protected your PC"* because the build is unsigned —
+**More info → Run anyway**, once per version. See
 [Windows SmartScreen](#windows-smartscreen).
 
-### Linux
-
-| File | Use it on |
-|---|---|
-| `VidGrab-1.1.0-x86_64-linux.AppImage` | any x64 distro, nothing to install |
-| `VidGrab-1.1.0-arm64-linux.AppImage` | any ARM64 distro — Pi 5, Graviton, ARM laptops |
-| `VidGrab-1.1.0-amd64-linux.deb` | Debian, Ubuntu, Mint, Pop!\_OS (x64) — menu entry + icon |
-
-There is no ARM64 `.deb`. Building one needs `fpm`, and electron-builder's bundled `fpm`
-is an x86\_64 Ruby program that cannot execute on an ARM64 runner (`Exec format error`) —
-so the ARM64 build publishes the AppImage only, which is the same app, uninstalled.
+**Linux** — the AppImage needs its executable bit once, then runs with nothing installed, on
+any distro and either chip:
 
 ```sh
-# AppImage — make it executable once, then run it
-chmod +x VidGrab-1.1.0-x86_64-linux.AppImage
-./VidGrab-1.1.0-x86_64-linux.AppImage
+chmod +x VidGrab-*-linux.AppImage
+./VidGrab-*-x86_64-linux.AppImage
 ```
+
+The `.deb` instead registers a `vidgrab` launcher and an icon in your desktop environment's
+application menu:
 
 ```sh
-sudo dpkg -i VidGrab-1.1.0-amd64-linux.deb       # Debian / Ubuntu
+sudo dpkg -i VidGrab-*-amd64-linux.deb
 ```
 
-The `.deb` installs a `vidgrab` launcher and registers the app icon in your desktop
-environment's application menu. **On Fedora, RHEL, openSUSE or Arch, use the AppImage** —
-there is no `.rpm`, because `rpmbuild` is not available on the Ubuntu CI runners that build
-these artifacts. The AppImage runs identically on all of them; only the menu entry and icon
-come from the `.deb`.
-
-Note the architecture token differs per package type — electron-builder expands `${arch}`
-to `x86_64` for AppImage and `amd64` for deb, so the filenames above are what you will
-actually see on the release page.
+There is no ARM64 `.deb` — that needs `fpm`, and electron-builder's bundled `fpm` is an
+x86\_64 Ruby program which cannot execute on an ARM64 runner (`Exec format error`) — and no
+`.rpm` at all, because `rpmbuild` is absent from the Ubuntu runners that build these files.
+So **on Fedora, RHEL, openSUSE or Arch, and on any ARM64 Linux, the AppImage is the one**:
+the same app, simply not registered in a menu. The [Linux notes](#linux) under
+Troubleshooting cover the `libfuse2` case that makes an AppImage abort on newer distros.
 
 ### From source
 
@@ -165,9 +173,14 @@ npm run dist:mac   # or dist:win / dist:linux — installers land in release/
 ```
 
 Every published artifact is built by
-[`.github/workflows/build.yml`](.github/workflows/build.yml) on a **native runner of its
-own kind** — a macOS ARM64 runner for Apple Silicon, macOS x64 for Intel, Windows for the
-NSIS installers, Ubuntu x64 and Ubuntu ARM64 for Linux. Nothing published is cross-built.
+[`.github/workflows/build.yml`](.github/workflows/build.yml), one job per platform and
+architecture, each passing electron-builder an explicit `--arch`. Four of the six run on a
+runner of the architecture they produce (macOS ARM64, Ubuntu x64, Ubuntu ARM64, and Windows
+x64). The other two — macOS x64 and Windows ARM64 — are assembled on a runner of the *other*
+chip, which is sound because nothing is compiled: each package carries the prebuilt,
+arch-native Electron binary for its target, and the packaging tools (`hdiutil`, NSIS) are
+arch-agnostic. GitHub retired its last x64 macOS runner, so there is no alternative for the
+Intel DMG. Either way the binary inside is the native one for the machine you install it on.
 
 ### Runtime requirements
 
@@ -297,8 +310,8 @@ CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:linux  # .AppImage (+ .deb on x64
 Each architecture is a separate invocation, the way CI runs it:
 
 ```sh
-npx electron-builder --mac --arm64      # → release/VidGrab-1.1.0-arm64-mac.{dmg,zip}
-npx electron-builder --mac --x64        # → release/VidGrab-1.1.0-x64-mac.{dmg,zip}
+npx electron-builder --mac --arm64      # → release/VidGrab-*-arm64-mac.{dmg,zip}
+npx electron-builder --mac --x64        # → release/VidGrab-*-x64-mac.{dmg,zip}
 npx electron-builder --linux AppImage --arm64   # no .deb: fpm is x86_64-only
 ```
 
@@ -440,17 +453,17 @@ paid code-signing certificate with an EV or trusted-history key — the same rea
 build is unsigned. Verify the SHA256 from the release page before you accept the prompt:
 
 ```powershell
-Get-FileHash .\VidGrab-Setup-1.1.0-x64-win.exe -Algorithm SHA256
+Get-FileHash .\VidGrab-Setup-*-x64-win.exe -Algorithm SHA256
 ```
 
 ### Linux
 
-- **AppImage won't run** — `chmod +x VidGrab-1.1.0-x86_64-linux.AppImage` first; downloaded
+- **AppImage won't run** — `chmod +x VidGrab-*-x86_64-linux.AppImage` first; downloaded
   copies lose the executable bit.
 - **AppImage aborts on a newer distro** with `libfuse.so.2` not found — AppImage 2 needs
   FUSE, which Ubuntu 22.04+ and Fedora dropped by default. Either `sudo apt install
   libfuse2` (or `sudo dnf install fuse-libs`), or run it already extracted:
-  `./VidGrab-1.1.0-x86_64-linux.AppImage --appimage-extract-and-run`.
+  `./VidGrab-*-x86_64-linux.AppImage --appimage-extract-and-run`.
 - **No sound on completion** — the chime tries `paplay`, `pw-play`, `aplay`,
   `canberra-gtk-play` and `play` in turn. On a headless or Wayland-only session with none
   of them installed you get the OS beep instead; installing `pulseaudio-utils` or

@@ -243,85 +243,25 @@ jobs:
             | sed 's|\./||' | sort -k2 > SHA256SUMS
           cat SHA256SUMS
 
+      # The release job checks out nothing by default, so tools/release-body.sh would not
+      # exist on disk to run; checkout brings it in. (It also gives gh a git working
+      # directory, though the publish step passes --repo regardless.)
+      - uses: actions/checkout@v4
+
       # The body is generated from the files that actually exist, so it can never
-      # advertise an artifact name or a checksum that does not match this tag.
+      # advertise an artifact name or a checksum that does not match this tag. The script
+      # exits non-zero unless the inventory matches the expected nine installers exactly —
+      # that is what keeps the page honest if electron-builder changes a filename.
       - name: write the release body
         run: |
           set -e
           TAG=${GITHUB_REF#refs/tags/}
-          {
-            echo "> **Unsigned builds.** No Developer ID certificate and no notarisation, so macOS"
-            echo "> Gatekeeper and Windows SmartScreen each block the first open of a downloaded copy,"
-            echo "> and a Linux AppImage needs its executable bit set. This is a certificate gap, not a"
-            echo "> tampered download — check the table below, then read"
-            echo "> [Troubleshooting](https://github.com/arifbuildsai/vidgrab#troubleshooting)."
-            echo
-            echo "## Which file do I want? ($TAG)"
-            echo
-            echo "| File | For | Size | SHA256 |"
-            echo "|---|---|---:|---|"
-            for f in assets/*; do
-              b=$(basename "$f")
-              [ "$b" = "SHA256SUMS" ] && continue
-              sz=$(du -m "$f" | cut -f1)
-              h=$(sha256sum "$f" | cut -d' ' -f1)
-              case "$b" in
-                *arm64-mac.dmg)  use="macOS — **Apple Silicon** (M1+). Unsure?  → About This Mac → Chip says *Apple M…*" ;;
-                *x64-mac.dmg)    use="macOS — **Intel**" ;;
-                *arm64-mac.zip)  use="macOS Apple Silicon, unzipped instead of mounted" ;;
-                *x64-mac.zip)    use="macOS Intel, unzipped instead of mounted" ;;
-                *x64-win.exe)    use="Windows — **x64**, the overwhelming majority of PCs" ;;
-                *arm64-win.exe)  use="Windows on **ARM** — Snapdragon X, Surface Pro 11" ;;
-                *x86_64-linux.AppImage) use="Linux x64 — any distro, no install, run directly" ;;
-                *arm64-linux.AppImage) use="Linux ARM64 — any distro (Pi 5, Graviton, ARM laptops)" ;;
-                *amd64-linux.deb) use="Debian / Ubuntu / Mint / Pop!\_OS — x64 (menu entry + icon)" ;;
-                *)               use="—" ;;
-              esac
-              echo "| \`$b\` | $use | ${sz} MB | \`$h\` |"
-            done
-            echo
-            echo "Verify your copy:"
-            echo
-            echo '```sh'
-            echo 'shasum -a 256 -c SHA256SUMS        # macOS / Linux'
-            echo "Get-FileHash .\\VidGrab-Setup-${TAG#v}-x64-win.exe -Algorithm SHA256   # Windows PowerShell"
-            echo '```'
-            echo
-            echo "## Install"
-            echo
-            echo "- **macOS** — open the DMG, drag VidGrab into Applications, then clear the quarantine"
-            echo "  flag once: \`sudo xattr -dr com.apple.quarantine /Applications/VidGrab.app\`"
-            echo "- **Windows** — run the installer; one-click into your user profile, no admin rights."
-            echo "  SmartScreen: **More info → Run anyway**."
-            echo "- **Linux** — \`chmod +x\` the AppImage and run it: works on x64 and ARM64 alike, on any"
-            echo "  distro, with no install. On Debian/Ubuntu x64 the \`.deb\` adds a menu entry and icon"
-            echo "  (\`sudo dpkg -i\`). Fedora/RHEL/openSUSE/Arch have the AppImage — no RPM is published,"
-            echo "  because GitHub's Ubuntu runners ship no usable \`rpmbuild\`."
-            echo
-            echo "## What is in VidGrab"
-            echo
-            echo "One link field, one button. Paste a YouTube link, pick a quality that genuinely exists"
-            echo "for that video, get an H.264 + AAC MP4 that plays in QuickTime — or an MP3. No account,"
-            echo "no extension, no telemetry: the renderer's CSP is \`connect-src 'none'\`, so the page"
-            echo "cannot reach the network at all."
-            echo
-            echo "- **Ranged parallel fetch.** YouTube serves an open-ended GET at ~24 KiB/s and the same"
-            echo "  URL with a \`Range\` header at 1.1–2.4 MB/s. VidGrab splits every stream into four"
-            echo "  ranged requests and launches them the moment the probe announces a length: a 176 MB"
-            echo "  1080p video drops from over an hour to **8.4 minutes**."
-            echo "- **Only downloadable qualities are offered.** Each chip is resolved against the real"
-            echo "  format list, so a quality the app cannot deliver never appears as a button."
-            echo "- **Speed and time left never blank**, through pauses, retries and the final merge."
-            echo "- **Cancel is clean** (\`⌘.\` / \`Ctrl+.\`): every slice killed, scratch folder removed."
-            echo "- **A completion chime** from the main process, so it sounds with the window backgrounded."
-            echo
-            echo "Full detail, per-platform notes and the acceptance harness:"
-            echo "[README](https://github.com/arifbuildsai/vidgrab#readme)."
-            echo
-            echo "Built on native runners for macOS (Apple Silicon + Intel), Windows (x64 + ARM64) and"
-            echo "Linux (x64 + ARM64). [MIT](https://github.com/arifbuildsai/vidgrab/blob/main/LICENSE)"
-            echo "© [Arif Shah](https://github.com/arifbuildsai)."
-          } > /tmp/body.md
+          for f in assets/*; do
+            printf '%s\t%s\t%s\n' "$(basename "$f")" "$(stat -c %s "$f")" "$(sha256sum "$f" | cut -d' ' -f1)"
+          done > /tmp/inventory.tsv
+          bash tools/release-body.sh --tag "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --output /tmp/body.md < /tmp/inventory.tsv
+          echo "  download links the page offers: $(grep -c 'releases/download/' /tmp/body.md)"
           cat /tmp/body.md
 
       - name: publish
